@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.ruff.lint.per-file-ignores]
+# These three entrypoint scripts insert the repo root onto sys.path before
+# importing project-local modules, so those imports can't be at the very top
+# of the file. Intentional, not an oversight -- see the comment above each
+# sys.path.insert call.
+"benchmarks/bench_bitemporal.py" = ["E402"]
+"benchmarks/bench_chunk_granularity.py" = ["E402"]
+"benchmarks/bench_scale.py" = ["E402"]
+"benchmarks/run_all.py" = ["E402"]
+"charts/generate_all.py" = ["E402"]
