@@ -1,6 +1,6 @@
 # Data
 
-StreamXor uses two datasets, both sourced from Yahoo Finance via `yfinance`.
+PitDB uses two datasets, both sourced from Yahoo Finance via `yfinance`.
 
 ## Dataset A — Daily bars (primary)
 - Symbols: AAPL, MSFT, GOOG, AMZN, TSLA, META, NVDA, JPM, V, JNJ

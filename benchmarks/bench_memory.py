@@ -77,7 +77,7 @@ def _measure_peak_rss(fn: Callable[[], Any]) -> tuple[int, int]:
 
     sampler = Thread(
         target=sample_until_stopped,
-        name="streamxor-rss-sampler",
+        name="pitdb-rss-sampler",
         daemon=True,
     )
     sampler.start()

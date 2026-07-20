@@ -1,13 +1,34 @@
-# Methodology
+<div align="center">
 
-This document is the "how do we know it's true" companion to
-[architecture.md](architecture.md). It covers four things: how correctness is
+# PitDB Methodology
+
+**How correctness is proven, how performance is measured honestly, and the full story of two self-audits that found real bugs.**
+
+[← Back to README](README.md) · [Architecture deep-dive](ARCHITECTURE.md)
+
+</div>
+
+<br/>
+
+This is the "how do we know it's true" companion to
+[ARCHITECTURE.md](ARCHITECTURE.md). It covers four things: how correctness is
 proven (not just tested), how performance claims are measured (not just
 eyeballed), the audits that found and fixed real bugs this project shipped
 with — told honestly, including the dead ends — and the exact, current
-numbers behind every claim in [the README](../README.md).
+numbers behind every claim in [the README](README.md).
 
-## 1. Correctness philosophy : 
+## Contents
+
+- [1. Correctness philosophy](#1-correctness-philosophy)
+- [2. Benchmark design](#2-benchmark-design)
+- [3. Headline, verified results](#3-headline-verified-results)
+- [Audit trail, at a glance](#audit-trail-at-a-glance)
+- [4. The first audit](#4-the-first-audit-finding-correctness-and-performance-bugs-with-evidence-not-guesses)
+- [5. A second audit](#5-a-second-audit-performance-loopholes-and-benchmark-methodology-honesty)
+- [6. Reproducibility](#6-reproducibility)
+- [7. Known limitations](#7-known-limitations--explicitly-deferred-work)
+
+## 1. Correctness philosophy
 
 The project's actual technical identity is **provably correct time-series
 query semantics**, not raw speed. Every pruning decision in the pushdown path
@@ -17,23 +38,69 @@ follows one rule, repeated verbatim in code comments throughout the codebase:
 > `True` may be a false positive ("maybe, decompress and check exactly") but
 > `False` may never be a false negative.
 
-Two mechanisms enforce this in practice:
+Two mechanisms enforce this in practice.
 
-**Full-scan equivalence, everywhere.** `FullScanQueryEngine` decompresses
-every chunk unconditionally and never consults a label. Every fixed benchmark
-query (Q1–Q5, Dataset B's three queries, every bitemporal correction-rate
-scenario) asserts `pd.testing.assert_frame_equal` between the pushdown path's
-output and this naive baseline's output — full row/value/dtype equality, not
-just a row count — before any speedup number is ever reported. This is what
-caught two real bugs early in the project's life (`In.evaluate_against_row`
-silently diverging from its vectorized twin on timezone-aware comparisons, and
-`evaluate_against_label` misusing its own alignment helper asymmetrically) and
-several more in the audits documented in §4 and §5 below.
+**Full-scan equivalence, everywhere.**
+
+```mermaid
+flowchart LR
+    SQL["Same SQL query"] --> FS["FullScanQueryEngine<br/>naive baseline, no pruning"]
+    SQL --> QE["QueryExecutor<br/>pushdown-pruned path"]
+    FS --> EQ{"assert_frame_equal()<br/>full row / value / dtype equality"}
+    QE --> EQ
+    EQ -->|"mismatch"| FAIL["Test/benchmark fails —<br/>no speedup number is ever computed"]
+    EQ -->|"match"| SPEED["Only now: compute and report<br/>the pushdown speedup"]
+
+    classDef engine fill:#EAF1FB,stroke:#2F6FA3,color:#1B3A57,stroke-width:1px;
+    classDef gate fill:#FDF1E7,stroke:#E07A2D,color:#5C3315,stroke-width:1px;
+    classDef bad fill:#FBEAEA,stroke:#B3413F,color:#5C1F1D,stroke-width:1px;
+    classDef good fill:#EAF7EC,stroke:#3F9142,color:#1F4B21,stroke-width:1px;
+    class FS,QE engine;
+    class EQ gate;
+    class FAIL bad;
+    class SPEED good;
+```
+
+`FullScanQueryEngine` decompresses every chunk unconditionally and never
+consults a label. Every fixed benchmark query (Q1–Q5, Dataset B's three
+queries, every bitemporal correction-rate scenario) asserts
+`pd.testing.assert_frame_equal` between the pushdown path's output and this
+naive baseline's output — full row/value/dtype equality, not just a row
+count — before any speedup number is ever reported. This is what caught two
+real bugs early in the project's life (`In.evaluate_against_row` silently
+diverging from its vectorized twin on timezone-aware comparisons, and
+`evaluate_against_label` misusing its own alignment helper asymmetrically)
+and several more in the audits documented in
+[§4](#4-the-first-audit-finding-correctness-and-performance-bugs-with-evidence-not-guesses)
+and
+[§5](#5-a-second-audit-performance-loopholes-and-benchmark-methodology-honesty)
+below.
 
 **Property-based equivalence proofs for the bitemporal machinery.**
-`tests/test_compaction.py` and `tests/test_as_of_index.py` use `hypothesis` to
-check two invariants across a *generated* space of random inputs, not just a
-handful of hand-picked examples:
+
+```mermaid
+flowchart TD
+    subgraph Example["Example-based testing"]
+        direction TB
+        E1["A handful of<br/>hand-picked inputs"] --> E2["Assert the expected<br/>output for each one"]
+    end
+
+    subgraph Property["Property-based testing — hypothesis"]
+        direction TB
+        P1["Generated space of random<br/>correction sets + AS OF cutoffs"] --> P2["Assert an invariant holds<br/>for every generated case"]
+        P2 --> P3["Compaction never changes<br/>what a query sees"]
+        P2 --> P4["Indexed fast path and linear<br/>scan agree — same order too"]
+    end
+
+    classDef ex fill:#F3F0FA,stroke:#6E56CF,color:#332B4D,stroke-width:1px;
+    classDef pr fill:#EAF7EC,stroke:#3F9142,color:#1F4B21,stroke-width:1px;
+    class E1,E2 ex;
+    class P1,P2,P3,P4 pr;
+```
+
+`tests/test_compaction.py` and `tests/test_as_of_index.py` use `hypothesis`
+to check two invariants across a *generated* space of random inputs, not
+just a handful of hand-picked examples:
 
 - Compaction never changes what a query sees — for random correction sets and
   random `AS OF` cutoffs, results before and after `compact_corrections()`
@@ -41,8 +108,9 @@ handful of hand-picked examples:
 - The transaction-time index never disagrees with the linear scan it
   replaces — for random label sets and random `AS OF` values, the indexed
   fast path and the O(n) fallback must partition chunks into the same
-  candidate/skipped sets, **in the same order** (tightened in §5 after the
-  second audit found the order guarantee didn't always hold).
+  candidate/skipped sets, **in the same order** (tightened in
+  [§5](#5-a-second-audit-performance-loopholes-and-benchmark-methodology-honesty)
+  after the second audit found the order guarantee didn't always hold).
 
 This is the actual "scientifically proven" bar for this project: an
 equivalence property checked over a generated input space, not asserted from a
@@ -50,8 +118,31 @@ few examples.
 
 ## 2. Benchmark design
 
-Every benchmark in `benchmarks/` follows the same shape, established in
-`bench_query.py` and carried through every later addition:
+```mermaid
+flowchart TD
+    S1["1. Generate deterministic data<br/>fixed np.random.default_rng seed,<br/>or load committed data/cache/*.csv"] --> S2["2. Run baseline + pushdown<br/>against the same SQL"]
+    S2 --> S3{"3. assert_equivalent()<br/>full row/value/dtype equality"}
+    S3 -->|fail| STOP["Stop — no number is reported"]
+    S3 -->|pass| S4["4. Drop the slowest 15% of trials<br/>trimmed_mean_and_std"]
+    S4 --> S5["5. Compute mean + 95% CI<br/>ddof=1, Z=1.96"]
+    S5 --> S6{"6. Comparing two latencies?<br/>intervals_overlap()"}
+    S6 -->|overlap| N1["Not distinguishable from noise"]
+    S6 -->|no overlap| N2["Real, reportable difference"]
+    N1 --> S7["7. render_table()<br/>one aligned summary per script"]
+    N2 --> S7
+
+    classDef step fill:#EAF1FB,stroke:#2F6FA3,color:#1B3A57,stroke-width:1px;
+    classDef gate fill:#FDF1E7,stroke:#E07A2D,color:#5C3315,stroke-width:1px;
+    classDef bad fill:#FBEAEA,stroke:#B3413F,color:#5C1F1D,stroke-width:1px;
+    classDef good fill:#EAF7EC,stroke:#3F9142,color:#1F4B21,stroke-width:1px;
+    class S1,S2,S4,S5,S7 step;
+    class S3,S6 gate;
+    class STOP bad;
+    class N1,N2 good;
+```
+
+Every benchmark in `benchmarks/` follows the same seven-step shape,
+established in `bench_query.py` and carried through every later addition:
 
 1. Generate deterministic synthetic data (fixed `np.random.default_rng` seeds)
    or load the committed real-market-data fixtures in `data/cache/`.
@@ -82,6 +173,26 @@ Every benchmark in `benchmarks/` follows the same shape, established in
 slightly optimistic (narrow) approximation at low trial counts, not an exact
 interval.
 
+**Step 6, isolated** — this is the single check that keeps every "X vs. Y"
+claim in this document honest:
+
+```mermaid
+flowchart LR
+    M1["Measurement A<br/>mean ± 95% CI"] --> D{"Do the two<br/>95% CIs overlap?<br/>intervals_overlap()"}
+    M2["Measurement B<br/>mean ± 95% CI"] --> D
+    D -->|yes| R1["Not distinguishable from noise —<br/>reported as such, not as a finding"]
+    D -->|no| R2["A real, reportable difference"]
+
+    classDef input fill:#EAF1FB,stroke:#2F6FA3,color:#1B3A57,stroke-width:1px;
+    classDef gate fill:#FDF1E7,stroke:#E07A2D,color:#5C3315,stroke-width:1px;
+    classDef noise fill:#F3F0FA,stroke:#6E56CF,color:#332B4D,stroke-width:1px;
+    classDef real fill:#EAF7EC,stroke:#3F9142,color:#1F4B21,stroke-width:1px;
+    class M1,M2 input;
+    class D gate;
+    class R1 noise;
+    class R2 real;
+```
+
 ### The benchmark suite
 
 | Script | Measures |
@@ -95,7 +206,7 @@ interval.
 ## 3. Headline, verified results
 
 All figures below are read directly from the current `benchmarks/results/*.json`
-files, generated by the commands in [the README](../README.md#running-the-benchmark-suite) —
+files, generated by the commands in [the README](README.md#running-the-benchmark-suite) —
 nothing here is hand-computed, and every number carries the same
 `_assert_equivalent` correctness gate described in §1.
 
@@ -104,8 +215,8 @@ nothing here is hand-computed, and every number carries the same
 | Query | Predicate | Selectivity | Chunks skipped | Speedup |
 |---|---|---:|---:|---:|
 | Q1 | `symbol = X AND date = Y` | 0.02% | 99.6% | **~40–46x** |
-| Q2 | narrow date range | 0.4% | 99.6% | **~39–46x** |
-| Q3 | `symbol IN (...)` + range | 0.2% | 99.2% | **~35–39x** |
+| Q2 | narrow date range | 0.4% | 99.6% | **~46–49x** |
+| Q3 | `symbol IN (...)` + range | 0.2% | 99.2% | **~35–41x** |
 | Q4 | price + date range | 2.8% | 97.1% | **~23–25x** |
 | Q5 | broad date-only (50% selectivity) | 50.1% | 50.0% | **~2.7–3.1x** |
 
@@ -127,9 +238,9 @@ directly rather than cherry-picking only the favorable queries.
 | Target selectivity | Actual selectivity | Speedup |
 |---:|---:|---:|
 | 100% | 100.00% | ~1.5x |
-| 50% | 50.10% | ~2.8–2.9x |
-| 10% | 9.78% | ~10.5–11.4x |
-| 1% | 1.00% | ~17–19x |
+| 50% | 50.10% | ~2.9–3.0x |
+| 10% | 9.78% | ~9.5–10.5x |
+| 1% | 1.00% | ~21–24x |
 | 0.1% | 0.20% | ~20–25x |
 
 The relationship is smooth and monotonic — pruning power scales inversely
@@ -185,7 +296,7 @@ data to decompress) — a real trade-off, not a bug, generated automatically by
 
 | Granularity | Chunks | Avg. rows/chunk | Chunks skipped | Speedup |
 |---|---:|---:|---:|---:|
-| Weekly | 1,010 | 5.0 | 99.7% | **~63–70x** |
+| Weekly | 1,010 | 5.0 | 99.7% | **~71–73x** |
 | Monthly (default) | 240 | 20.9 | 99.2% | ~30–31x |
 | Quarterly | 80 | 62.6 | 97.5% | ~19–20x |
 
@@ -225,6 +336,35 @@ quadratic) by direct measurement across four correction-volume points (see
 the `compacted_chunks`/compaction-time figures behind the bitemporal sweep
 table above).
 
+## Audit trail, at a glance
+
+```mermaid
+timeline
+    title Two independent audits, told in order — including the dead ends
+    section First audit — correctness and a real O(n²) performance bug
+        Anomaly observed : AS OF latency crept upward as correction volume grew
+        Direct timing : confirmed super-linear growth, 0.04s to 2.24s across 4 points
+        cProfile : localized to _remove_chunk's O(k·n) rebuild-per-call
+        Fix + re-measure : same compaction call now ~50–70ms
+        Noise vs regression : intervals_overlap() cleared an apparent regression
+        Outlier found : one CI 3–8x wider than its siblings, fixed with a trimmed mean
+        Deep pass : 7 real correctness bugs found and fixed in the bitemporal path
+    section Second audit — performance and benchmark-methodology honesty
+        Regression in the fix : a SQL comment could defeat the first audit's AS OF regex
+        Redundant sort removed : confirmed by a same-process A/B test, 6.4% faster
+        Methodology gap closed : trimmed mean extended to 3 more benchmark scripts
+        Misleading chart fixed : charted a number already computed but never shown
+        Broken script found : caught by actually running it, not just reading it
+        Contract violation fixed : index fast path now preserves label order
+        Output unified : one shared table renderer replaces five hand-rolled ones
+```
+
+**What this shows:** the project was audited twice, deliberately — the
+second pass covering performance and benchmark-methodology honesty
+specifically, not just correctness. Every entry above has a concrete
+before/after in the detailed sections below: a reproduction, a measurement,
+or both — never a general sense that things were probably fine.
+
 ## 4. The first audit: finding correctness and performance bugs with evidence, not guesses
 
 A benchmark run surfaced a real, honest problem: an `AS OF` query's pushdown
@@ -232,6 +372,24 @@ latency crept upward as correction volume grew, even though pushdown pruning
 should have made that scenario close to flat. Rather than accept a
 plausible-sounding explanation, each hypothesis was checked against a real
 measurement:
+
+```mermaid
+flowchart TD
+    A["Benchmark shows AS OF latency<br/>creeping upward with correction volume"] --> B["Direct timing, no profiler:<br/>isolate compact_corrections() alone<br/>across 4 correction-volume points"]
+    B --> C{"Super-linear growth confirmed?<br/>0.04s → 0.18s → 0.78s → 2.24s"}
+    C -->|yes, real bug| D["cProfile to localize"]
+    D --> E["_remove_chunk rebuilds the entire<br/>chunk list once PER removed chunk<br/>— O(k·n), not O(k)"]
+    E --> F["Fix: batch removal into<br/>one filtering pass"]
+    F --> G["Re-measure with the<br/>same direct-timing script"]
+    G --> H["2.24s → ~50–70ms<br/>fix confirmed apples-to-apples"]
+
+    classDef obs fill:#FBEAEA,stroke:#B3413F,color:#5C1F1D,stroke-width:1px;
+    classDef measure fill:#EAF1FB,stroke:#2F6FA3,color:#1B3A57,stroke-width:1px;
+    classDef fix fill:#EAF7EC,stroke:#3F9142,color:#1F4B21,stroke-width:1px;
+    class A,C obs;
+    class B,D,E measure;
+    class F,G,H fix;
+```
 
 1. **Direct timing, no profiler.** Isolating `compact_corrections()` alone
    across four correction-volume points (580 → 5,490 chunks) showed clearly
@@ -378,7 +536,7 @@ general sense that things were probably fine.
   between runs.
 - Every result file (`benchmarks/results/*.json`) and every chart
   (`charts/output/*.png`) can be regenerated from scratch with the commands in
-  the [README](../README.md#running-the-benchmark-suite).
+  the [README](README.md#running-the-benchmark-suite).
 - **One honest exception:** the scale-sweep table in §3 is from the most
   recent full 1x–1000x run, captured before the second audit's performance
   fixes landed. Those fixes don't touch `bench_scale.py`'s own code path
@@ -413,3 +571,12 @@ general sense that things were probably fine.
   already-validated same-symbol data) — considered during the second audit
   and deliberately left as a documented, low-probability edge case rather
   than added complexity for a risk that isn't currently reachable.
+
+<br/>
+
+<div align="center">
+
+[← Back to README](README.md) · [Architecture deep-dive →](ARCHITECTURE.md)
+
+</div>
+</content>
