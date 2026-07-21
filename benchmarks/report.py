@@ -10,6 +10,8 @@ way.
 
 from __future__ import annotations
 
+import math
+
 
 def render_table(headers: list[str], rows: list[list[str]]) -> str:
     """Return an aligned table as a single string, ready to print.
@@ -44,6 +46,45 @@ def render_table(headers: list[str], rows: list[list[str]]) -> str:
     return "\n".join(lines)
 
 
+def render_box_table(headers: list[str], rows: list[list[str]]) -> str:
+    """Return a Unicode box-drawing table (``┌─┬─┐`` style) as one string.
+
+    Every column, including the first, is left-aligned within its own
+    one-space padding -- this is a distinct visual convention from
+    :func:`render_table`'s right-aligned data columns, matching the
+    box-table style used in the per-query/per-benchmark result blocks that
+    call this function directly rather than through ``render_table``.
+    Column widths are derived from the longest cell -- header or data -- in
+    that column, exactly like ``render_table``.
+    """
+
+    if not headers:
+        raise ValueError("headers must not be empty")
+    if any(len(row) != len(headers) for row in rows):
+        raise ValueError("every row must have as many cells as headers")
+
+    widths = [len(header) for header in headers]
+    for row in rows:
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], len(cell))
+
+    def border(left: str, junction: str, right: str) -> str:
+        return left + junction.join("─" * (width + 2) for width in widths) + right
+
+    def render_row(cells: list[str]) -> str:
+        padded = [cell.ljust(width) for cell, width in zip(cells, widths, strict=True)]
+        return "│ " + " │ ".join(padded) + " │"
+
+    lines = [
+        border("┌", "┬", "┐"),
+        render_row(headers),
+        border("├", "┼", "┤"),
+    ]
+    lines.extend(render_row(row) for row in rows)
+    lines.append(border("└", "┴", "┘"))
+    return "\n".join(lines)
+
+
 def format_ms(value_ms: float) -> str:
     """Format a millisecond value with a fixed, consistent precision."""
 
@@ -62,4 +103,35 @@ def format_pct(fraction: float) -> str:
     return f"{fraction * 100:.2f}%"
 
 
-__all__ = ["render_table", "format_ms", "format_x", "format_pct"]
+def format_bytes(num_bytes: float) -> str:
+    """Format a byte count using binary (KiB/MiB/GiB/TiB) units.
+
+    Values under 1024 bytes are shown as a plain integer count (no unit
+    subdivision below whole bytes -- this project never measures fractional
+    bytes). NaN/+-inf pass through Python's own float formatting (``"nan"``,
+    ``"inf"``, ``"-inf"``) rather than raising, matching every other
+    formatter in this module.
+    """
+
+    if not math.isfinite(num_bytes):
+        return f"{num_bytes}"
+
+    sign = "-" if num_bytes < 0 else ""
+    remaining = abs(float(num_bytes))
+    for unit in ("bytes", "KiB", "MiB", "GiB", "TiB"):
+        if remaining < 1024.0 or unit == "TiB":
+            if unit == "bytes":
+                return f"{sign}{int(remaining):,} {unit}"
+            return f"{sign}{remaining:,.2f} {unit}"
+        remaining /= 1024.0
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+__all__ = [
+    "render_table",
+    "render_box_table",
+    "format_ms",
+    "format_x",
+    "format_pct",
+    "format_bytes",
+]

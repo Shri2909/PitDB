@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,10 @@ if str(PROJECT_ROOT) not in sys.path:
 from benchmarks.bench_query import _assert_equivalent
 from benchmarks.bench_scale import _time_calls
 from benchmarks.config import NUM_TRIALS as DEFAULT_NUM_TRIALS
-from benchmarks.report import format_ms, format_pct, format_x, render_table
+from benchmarks.report import format_ms, format_pct, format_x, render_box_table
+from benchmarks.reporting import console
+from benchmarks.reporting.environment import git_commit, hardware_snapshot
+from benchmarks.reporting.validation import assert_equivalent_and_report
 from benchmarks.stats import (
     confidence_interval_95,
     intervals_overlap,
@@ -141,9 +145,18 @@ def measure_scenario(
     # Same correctness gate every other benchmark in this suite uses: full
     # row/value/dtype equality between the naive and pushdown paths, now
     # with corrections and an AS OF cutoff in play, before any latency is
-    # reported.
-    _assert_equivalent(
-        full_scan_query_result, pushdown_query_result, query_name=query_name
+    # reported. quiet=True: re-rendered inside each correction level's own
+    # "Correctness validation"/"Correctness revalidation" block once
+    # printing starts (see _print_correction_level), not live here during
+    # this still-silent computation phase.
+    assert_equivalent_and_report(
+        lambda: _assert_equivalent(
+            full_scan_query_result, pushdown_query_result, query_name=query_name
+        ),
+        name=query_name,
+        full_scan_row_count=full_scan_query_result.row_count,
+        pushdown_row_count=pushdown_query_result.row_count,
+        quiet=True,
     )
 
     # Trimmed, not plain, mean: latency outliers here are one-directional
@@ -174,22 +187,17 @@ def measure_scenario(
     }
 
 
-def _print_scenario(name: str, stats: dict[str, Any]) -> None:
-    print(
-        f"  [{name}] chunks={stats['total_chunks']:,} "
-        f"skipped={format_pct(stats['chunks_skipped_ratio'])} "
-        f"candidates={stats['candidate_chunks']}/{stats['total_chunks']} | "
-        f"pushdown={format_ms(stats['query_pushdown_mean_ms'])} "
-        f"full_scan={format_ms(stats['query_full_scan_mean_ms'])} "
-        f"speedup={format_x(stats['query_speedup'])}"
-    )
-
-
 def _compare(
     label: str, before: dict[str, Any], after: dict[str, Any]
 ) -> dict[str, Any]:
     """Flag whether a before/after pushdown-latency delta is real or noise,
-    the same way bench_query.py's annotate_pairwise_significance does."""
+    the same way bench_query.py's annotate_pairwise_significance does.
+
+    Computed for every correction level's JSON output regardless of
+    whether the current terminal format prints it (it currently doesn't --
+    see _print_correction_level); still available to anyone reading
+    bitemporal_sweep.json directly.
+    """
 
     overlap = intervals_overlap(
         before["query_pushdown_ci95_low_ms"],
@@ -197,27 +205,24 @@ def _compare(
         after["query_pushdown_ci95_low_ms"],
         after["query_pushdown_ci95_high_ms"],
     )
-    comparison = {
+    return {
         "comparison": label,
         "before_mean_ms": before["query_pushdown_mean_ms"],
         "after_mean_ms": after["query_pushdown_mean_ms"],
         "ci95_overlap": overlap,
         "distinguishable_from_noise": not overlap,
     }
-    verdict = (
-        "DISTINGUISHABLE (a real difference)"
-        if comparison["distinguishable_from_noise"]
-        else "NOT distinguishable (likely measurement noise)"
-    )
-    print(
-        f"  significance [{label}]: {format_ms(comparison['before_mean_ms'])} -> "
-        f"{format_ms(comparison['after_mean_ms'])}: {verdict}"
-    )
-    return comparison
 
 
 def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]:
-    print(f"\n=== correction rate {label}: {correction_rate:.1%} of rows corrected ===")
+    """Compute one correction level's full before/after measurement set.
+
+    Silent: nothing is printed here (see quiet=True inside
+    measure_scenario) -- this function only computes and returns data, so
+    the exact-format per-level block (_print_correction_level) can be
+    printed as one complete, self-contained unit once every value it needs
+    already exists.
+    """
 
     df = generate_synthetic_ohlcv(
         num_symbols=NUM_SYMBOLS, rows_per_symbol=ROWS_PER_SYMBOL, seed=1
@@ -244,13 +249,6 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
         else 0.0
     )
     chunks_before_compaction = store.total_chunks
-    print(
-        f"ingested {base_rows:,} base rows into {base_chunks:,} chunks; "
-        f"{len(corrections):,} corrections into "
-        f"{chunks_before_compaction - base_chunks:,} additional chunks "
-        f"in {correction_seconds:.3f}s"
-        + (f" ({correction_rows_per_second:,.0f} corrections/s)" if corrections else "")
-    )
 
     where_clause = "timestamp >= '2023-01-01'"
     predicate = parse_where_clause(f"SELECT * FROM data WHERE {where_clause}")
@@ -274,7 +272,6 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
         sql=current_sql,
         query_name=f"bitemporal-{label}-current-pre",
     )
-    _print_scenario("current (pre-compaction)", current_pre)
 
     as_of_pre = None
     if corrections:
@@ -285,21 +282,24 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
             sql=as_of_sql,
             query_name=f"bitemporal-{label}-as_of-pre",
         )
-        _print_scenario("as_of (pre-compaction)", as_of_pre)
 
     # Reflects the recommended production workflow: ingest_correction stays
     # cheap and never blocks (measured above), consolidation happens later
     # via this explicit, idempotent maintenance call. Timed directly, not
-    # inferred -- this used to be an untimed, unprinted step.
+    # inferred.
     t0 = time.perf_counter()
     compacted = store.compact_corrections()
     compaction_seconds = time.perf_counter() - t0
-    if compacted:
-        print(
-            f"compact_corrections(): {chunks_before_compaction:,} -> "
-            f"{store.total_chunks:,} chunks ({compacted:,} fewer) "
-            f"in {compaction_seconds * 1000:.3f}ms"
-        )
+    # Rows actually replayed through compact_corrections() -- every
+    # correction row gets re-read once per compaction pass, regardless of
+    # how many chunks that collapses into. 0 when there is nothing to
+    # compact (guards divide-by-zero rather than reporting a fabricated
+    # rate).
+    compaction_rows_per_second = (
+        len(corrections) / compaction_seconds
+        if corrections and compaction_seconds > 0
+        else 0.0
+    )
 
     current_post = measure_scenario(
         store=store,
@@ -308,7 +308,6 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
         sql=current_sql,
         query_name=f"bitemporal-{label}-current-post",
     )
-    _print_scenario("current (post-compaction)", current_post)
     current_comparison = _compare(
         "current pre-vs-post compaction", current_pre, current_post
     )
@@ -323,7 +322,6 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
             sql=as_of_sql,
             query_name=f"bitemporal-{label}-as_of-post",
         )
-        _print_scenario("as_of (post-compaction)", as_of_post)
         as_of_comparison = _compare(
             "as_of pre-vs-post compaction", as_of_pre, as_of_post
         )
@@ -331,15 +329,19 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
     entry = {
         "label": label,
         "correction_rate": correction_rate,
+        "as_of_cutoff": as_of_value.isoformat() if as_of_value is not None else None,
         "base_rows": base_rows,
         "base_chunks": base_chunks,
         "num_corrections": len(corrections),
         "correction_chunks": chunks_before_compaction - base_chunks,
+        "chunks_before_compaction": chunks_before_compaction,
         "correction_seconds": correction_seconds,
         "correction_rows_per_second": correction_rows_per_second,
         "compacted_chunks": compacted,
         "compaction_seconds": compaction_seconds,
+        "compaction_rows_per_second": compaction_rows_per_second,
         "total_chunks": store.total_chunks,
+        "correction_chunks_after_compaction": store.total_chunks - base_chunks,
         "scenarios": {
             "current_pre_compaction": current_pre,
             "current_post_compaction": current_post,
@@ -354,58 +356,360 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
     return entry
 
 
-def _scenario_speedup_cell(scenarios: dict[str, Any], key: str) -> str:
-    """Format one scenario's speedup for the summary table, or "--" if that
-    scenario wasn't measured at this point (0% correction rate has no AS OF
-    scenario -- there's nothing to look up as of a time before any
-    correction existed)."""
+def _correctness_status(scenario: dict[str, Any] | None) -> str:
+    """PASSED if the scenario was measured (and therefore already passed
+    the correctness gate inside measure_scenario -- reaching this point at
+    all requires that), else an explicit reason it wasn't measured."""
 
-    scenario = scenarios.get(key)
-    return format_x(scenario["query_speedup"]) if scenario else "--"
+    return "PASSED" if scenario is not None else "N/A (no corrections exist yet)"
 
 
-def _print_summary_table(results: list[dict[str, Any]]) -> None:
-    print("\nBitemporal correction-volume sweep -- speedup summary")
-    headers = [
-        "Corrected",
-        "Current, pre-cleanup",
-        "Current, post-cleanup",
-        "AS OF, pre-cleanup",
-        "AS OF, post-cleanup",
+def _matrix_row(
+    name: str, storage_state: str, scenario: dict[str, Any] | None
+) -> list[str]:
+    if scenario is None:
+        return [name, storage_state, "N/A", "N/A", "N/A"]
+    return [
+        name,
+        storage_state,
+        format_ms(scenario["query_full_scan_mean_ms"]),
+        format_ms(scenario["query_pushdown_mean_ms"]),
+        format_x(scenario["query_speedup"]),
     ]
-    rows = [
-        [
-            entry["label"],
-            _scenario_speedup_cell(entry["scenarios"], "current_pre_compaction"),
-            _scenario_speedup_cell(entry["scenarios"], "current_post_compaction"),
-            _scenario_speedup_cell(entry["scenarios"], "as_of_pre_compaction"),
-            _scenario_speedup_cell(entry["scenarios"], "as_of_post_compaction"),
-        ]
-        for entry in results
+
+
+def _pruning_row(name: str, scenario: dict[str, Any] | None) -> list[str]:
+    if scenario is None:
+        return [name, "N/A", "N/A", "N/A"]
+    pruned = scenario["total_chunks"] - scenario["candidate_chunks"]
+    return [
+        name,
+        f"{scenario['total_chunks']:,}",
+        f"{pruned:,}",
+        format_pct(scenario["chunks_skipped_ratio"]),
     ]
-    print(render_table(headers, rows))
+
+
+def _print_correction_level(*, index: int, total: int, entry: dict[str, Any]) -> None:
+    """Print one correction level's complete before/after block.
+
+    Every value used here is already fully computed in ``entry`` (see
+    ``run_correction_rate``) -- this function only formats and lays it out.
+    """
+
+    scenarios = entry["scenarios"]
+    current_pre = scenarios["current_pre_compaction"]
+    as_of_pre = scenarios.get("as_of_pre_compaction")
+    current_post = scenarios["current_post_compaction"]
+    as_of_post = scenarios.get("as_of_post_compaction")
+
+    print()
+    print(console.dash_section(f"[CORRECTION LEVEL {index}/{total}]"))
+
+    print()
     print(
-        "(pre/post-cleanup = before/after compact_corrections(); AS OF is only\n"
-        " measured once corrections exist, so 0% shows -- in both AS OF columns.\n"
-        " 'Current' = an ordinary query, no AS OF cutoff; 'AS OF' = a point-in-time\n"
-        " query predating every correction in this sweep.)"
+        console.titled_block(
+            "Correction workload",
+            [
+                ("Corrections", f"{entry['num_corrections']:,}"),
+                ("Corrected-row percentage", format_pct(entry["correction_rate"])),
+                ("Ingestion time", f"{entry['correction_seconds'] * 1000:.3f} ms"),
+                (
+                    "Ingestion throughput",
+                    f"{entry['correction_rows_per_second']:,.0f} corrections/second"
+                    if entry["num_corrections"]
+                    else "N/A (no corrections at this level)",
+                ),
+            ],
+        )
+    )
+    print()
+    print(
+        console.titled_block(
+            "Storage state before compaction",
+            [
+                ("Total chunks", f"{entry['chunks_before_compaction']:,}"),
+                ("Base chunks", f"{entry['base_chunks']:,}"),
+                ("Correction chunks", f"{entry['correction_chunks']:,}"),
+            ],
+        )
+    )
+    print()
+    print(
+        console.titled_block(
+            "Correctness validation",
+            [
+                ("Current-state query", "PASSED"),
+                ("Historical AS OF query", _correctness_status(as_of_pre)),
+            ],
+        )
+    )
+    print()
+    print("Performance matrix")
+    print()
+    print(
+        render_box_table(
+            ["Query", "Storage state", "Full scan", "Pushdown", "Speedup"],
+            [
+                _matrix_row("Current state", "Before compaction", current_pre),
+                _matrix_row("Historical AS OF", "Before compaction", as_of_pre),
+            ],
+        )
+    )
+    print()
+    print("Pruning before compaction")
+    print()
+    print(
+        render_box_table(
+            ["Query", "Total chunks", "Chunks pruned", "Pruning rate"],
+            [
+                _pruning_row("Current state", current_pre),
+                _pruning_row("Historical AS OF", as_of_pre),
+            ],
+        )
+    )
+
+    print()
+    print(console.dash_section("[COMPACTION]"))
+    print(
+        console.field_block(
+            [
+                ("Input chunks", f"{entry['chunks_before_compaction']:,}"),
+                ("Output chunks", f"{entry['total_chunks']:,}"),
+                ("Chunks merged", f"{entry['compacted_chunks']:,}"),
+                (
+                    "Compaction runtime",
+                    f"{entry['compaction_seconds'] * 1000:.3f} ms",
+                ),
+                (
+                    "Processing throughput",
+                    f"{entry['compaction_rows_per_second']:,.0f} rows/second"
+                    if entry["compacted_chunks"]
+                    else "N/A (nothing to compact)",
+                ),
+                ("Status", "COMPLETE"),
+            ]
+        )
+    )
+    print()
+    print(
+        console.titled_block(
+            "Storage state after compaction",
+            [
+                ("Total chunks", f"{entry['total_chunks']:,}"),
+                ("Base chunks", f"{entry['base_chunks']:,}"),
+                (
+                    "Correction chunks",
+                    f"{entry['correction_chunks_after_compaction']:,}",
+                ),
+            ],
+        )
+    )
+    print()
+    print(
+        console.titled_block(
+            "Correctness revalidation",
+            [
+                ("Current-state query", "PASSED"),
+                ("Historical AS OF query", _correctness_status(as_of_post)),
+            ],
+        )
+    )
+    print()
+    print("Performance matrix")
+    print()
+    print(
+        render_box_table(
+            ["Query", "Storage state", "Full scan", "Pushdown", "Speedup"],
+            [
+                _matrix_row("Current state", "After compaction", current_post),
+                _matrix_row("Historical AS OF", "After compaction", as_of_post),
+            ],
+        )
+    )
+
+
+def _sweep_summary_rows(results: list[dict[str, Any]]) -> list[list[str]]:
+    rows = []
+    for entry in results:
+        current_pre = entry["scenarios"]["current_pre_compaction"]["query_speedup"]
+        current_post = entry["scenarios"]["current_post_compaction"]["query_speedup"]
+        as_of_pre = entry["scenarios"].get("as_of_pre_compaction")
+        as_of_post = entry["scenarios"].get("as_of_post_compaction")
+        as_of_cell = (
+            f"{format_x(as_of_pre['query_speedup'])} / "
+            f"{format_x(as_of_post['query_speedup'])}"
+            if as_of_pre and as_of_post
+            else "-- / --"
+        )
+        rows.append(
+            [
+                f"{entry['num_corrections']:,}",
+                format_pct(entry["correction_rate"]),
+                f"{format_x(current_pre)} / {format_x(current_post)}",
+                as_of_cell,
+                f"{entry['compaction_seconds'] * 1000:.3f} ms",
+            ]
+        )
+    return rows
+
+
+def _current_state_trend(results: list[dict[str, Any]]) -> str:
+    first, last = results[0], results[-1]
+    first_speedup = first["scenarios"]["current_pre_compaction"]["query_speedup"]
+    last_speedup = last["scenarios"]["current_pre_compaction"]["query_speedup"]
+    direction = "grew" if last_speedup >= first_speedup else "fell"
+    return (
+        f"Pre-compaction speedup {direction} from {format_x(first_speedup)} at "
+        f"{first['label']} corrected to {format_x(last_speedup)} at "
+        f"{last['label']} corrected."
+    )
+
+
+def _as_of_trend(results: list[dict[str, Any]]) -> str:
+    with_corrections = [entry for entry in results if entry["num_corrections"] > 0]
+    if not with_corrections:
+        return "No corrections were applied in this sweep; AS OF was never measured."
+    first, last = with_corrections[0], with_corrections[-1]
+    first_speedup = first["scenarios"]["as_of_pre_compaction"]["query_speedup"]
+    last_speedup = last["scenarios"]["as_of_pre_compaction"]["query_speedup"]
+    direction = "grew" if last_speedup >= first_speedup else "fell"
+    return (
+        f"Pre-compaction speedup {direction} from {format_x(first_speedup)} at "
+        f"{first['label']} corrected to {format_x(last_speedup)} at "
+        f"{last['label']} corrected."
+    )
+
+
+def _compaction_trend(results: list[dict[str, Any]]) -> str:
+    compacted = [entry for entry in results if entry["compacted_chunks"] > 0]
+    if not compacted:
+        return "No correction chunks were compacted at any level in this sweep."
+    first, last = compacted[0], compacted[-1]
+    direction = (
+        "grew" if last["compaction_seconds"] >= first["compaction_seconds"] else "fell"
+    )
+    return (
+        f"Runtime {direction} from "
+        f"{first['compaction_seconds'] * 1000:.3f} ms at {first['label']} "
+        f"corrected to {last['compaction_seconds'] * 1000:.3f} ms at "
+        f"{last['label']} corrected."
     )
 
 
 def main() -> int:
+    # Silent, like Benchmarks 1 and 2: every correction level is fully
+    # computed (quiet=True inside measure_scenario) before anything prints,
+    # so the header and Configuration block below can report real base-row
+    # counts and the actual AS OF cutoff instead of placeholders.
     results = [
         run_correction_rate(label=f"{rate:.0%}", correction_rate=rate)
         for rate in CORRECTION_RATES
     ]
 
-    _print_summary_table(results)
-
     results_dir = PROJECT_ROOT / "benchmarks" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     output_path = results_dir / "bitemporal_sweep.json"
-    payload = {"points": results}
+    # "points" is byte-identical to what this file has always written;
+    # "generated_at_utc"/"git_commit"/"hardware" are new, additive
+    # provenance keys only -- see BENCHMARK_OUTPUT_AUDIT.md Section 9, item 1.
+    payload = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "git_commit": git_commit(),
+        "hardware": hardware_snapshot(),
+        "points": results,
+    }
     output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(f"\nWrote {output_path}")
+
+    print(
+        console.pitdb_header(
+            index=4, total=5, title="Bitemporal Corrections and Compaction"
+        )
+    )
+    print()
+    print("Question")
+    print(
+        console.wrap_text(
+            "How do correction volume and compaction affect current-state and "
+            "historical AS OF query performance?"
+        )
+    )
+
+    as_of_cutoffs = {
+        entry["as_of_cutoff"] for entry in results if entry["as_of_cutoff"]
+    }
+    if len(as_of_cutoffs) == 1:
+        as_of_cutoff_display = next(iter(as_of_cutoffs))
+    elif as_of_cutoffs:
+        as_of_cutoff_display = "varies by correction level"
+    else:
+        as_of_cutoff_display = "N/A (no corrections in this sweep)"
+
+    print()
+    print(
+        console.titled_block(
+            "Configuration",
+            [
+                ("Base rows", f"{results[0]['base_rows']:,}"),
+                ("Correction levels", str(len(CORRECTION_RATES))),
+                ("Historical AS OF cutoff", as_of_cutoff_display),
+                ("Compaction policy", "monthly (same granularity as base store)"),
+                ("Warmup runs", str(QUERY_WARMUP)),
+                ("Measured runs", str(QUERY_NUM_TRIALS)),
+            ],
+        )
+    )
+
+    for index, entry in enumerate(results, start=1):
+        _print_correction_level(index=index, total=len(results), entry=entry)
+
+    print()
+    print(console.dash_section("[CORRECTION SWEEP SUMMARY]"))
+    print()
+    print(
+        render_box_table(
+            [
+                "Corrections",
+                "Percent",
+                "Current-state speedup (before/after)",
+                "Historical AS OF speedup (before/after)",
+                "Compaction runtime",
+            ],
+            _sweep_summary_rows(results),
+        )
+    )
+
+    print()
+    print(console.dash_section("[RESULT]"))
+    print(
+        console.field_block(
+            [
+                ("Correctness", "PASSED AT ALL CORRECTION LEVELS"),
+                ("Current-state trend", _current_state_trend(results)),
+                ("Historical AS OF trend", _as_of_trend(results)),
+                ("Compaction trend", _compaction_trend(results)),
+                ("Result artifact", str(output_path)),
+            ]
+        )
+    )
+    print()
+    print(
+        console.titled_paragraph(
+            "Interpretation",
+            "Historical AS OF queries can reject correction chunks whose "
+            "transaction times occur after the requested cutoff.",
+        )
+    )
+    print()
+    print(
+        console.titled_paragraph(
+            "Limitation",
+            "Performance conclusions apply only to the tested correction "
+            "distributions and compaction policy.",
+        )
+    )
+    print()
+    print(console.pitdb_footer(index=4))
     return 0
 
 

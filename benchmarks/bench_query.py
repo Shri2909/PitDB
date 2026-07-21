@@ -16,6 +16,7 @@ from typing import Any, Protocol
 import numpy as np
 import pandas as pd
 
+from benchmarks.reporting.validation import assert_equivalent_and_report
 from benchmarks.stats import (
     confidence_interval_95,
     intervals_overlap,
@@ -184,18 +185,43 @@ def _benchmark_pair(
     sql: str,
     *,
     query_name: str,
+    quiet: bool = False,
 ) -> tuple[dict[str, float | int], dict[str, float | int], float, QueryResult]:
-    """Time both paths under identical controls and prove equivalence."""
+    """Time both paths under identical controls and prove equivalence.
+
+    ``quiet=True`` suppresses only the correctness PASS-path print (see
+    ``assert_equivalent_and_report``) for callers that will re-render the
+    outcome themselves elsewhere -- the assertion and its exception
+    behavior on failure are unaffected either way.
+    """
 
     full_scan_times, full_scan_result = _time_query(full_scan_engine, sql)
     pushdown_times, pushdown_result = _time_query(pushdown_engine, sql)
-    _assert_equivalent(full_scan_result, pushdown_result, query_name=query_name)
+    # Printed PASS/FAIL block around the same _assert_equivalent call this
+    # project has always made before computing any speedup -- see
+    # benchmarks/reporting/validation.py. A failure still raises and aborts
+    # the run exactly as before; only the pass path newly becomes visible.
+    assert_equivalent_and_report(
+        lambda: _assert_equivalent(
+            full_scan_result, pushdown_result, query_name=query_name
+        ),
+        name=query_name,
+        full_scan_row_count=full_scan_result.row_count,
+        pushdown_row_count=pushdown_result.row_count,
+        quiet=quiet,
+    )
 
     full_scan_metrics = _latency_metrics(full_scan_times, full_scan_result)
     pushdown_metrics = _latency_metrics(pushdown_times, pushdown_result)
     pushdown_metrics["chunks_skipped_ratio"] = (
         pushdown_result.pushdown.chunks_skipped_ratio
     )
+    # Exact integer counts already computed on pushdown_result.pushdown --
+    # exposed here (not derived by rounding chunks_skipped_ratio) so callers
+    # needing "chunks scanned"/"chunks pruned" as whole numbers, not just a
+    # percentage, don't have to reconstruct them lossily from the ratio.
+    pushdown_metrics["candidate_chunks"] = pushdown_result.pushdown.candidate_count
+    pushdown_metrics["total_chunks"] = pushdown_result.pushdown.total_chunks
     return (
         full_scan_metrics,
         pushdown_metrics,
@@ -205,13 +231,18 @@ def _benchmark_pair(
 
 
 def run_query_benchmarks(
-    store: ChunkStore, queries: dict[str, str] | None = None
+    store: ChunkStore, queries: dict[str, str] | None = None, *, quiet: bool = False
 ) -> dict[str, dict[str, Any]]:
     """Benchmark a fixed query workload using full-scan and pushdown paths.
 
     Defaults to the Q1-Q5 Dataset A workload; pass ``queries`` to run the
     same full-scan/pushdown/speedup/equivalence machinery against a
     different store, such as Dataset B's intraday queries.
+
+    ``quiet=True`` suppresses the correctness PASS-path print for every
+    query in this call (see ``_benchmark_pair``) -- for a caller that will
+    render each query's correctness outcome itself, embedded in a per-query
+    result block, rather than as a standalone line at computation time.
     """
 
     if not isinstance(store, ChunkStore):
@@ -232,6 +263,7 @@ def run_query_benchmarks(
             pushdown_engine,
             sql,
             query_name=query_name,
+            quiet=quiet,
         )
         # Selectivity is measured from the actual pushdown-query result,
         # never inferred from the query text or its expected workload class.
@@ -294,8 +326,12 @@ def _sweep_query(store: ChunkStore, target: float) -> str:
     return f"SELECT * FROM data WHERE timestamp >= '{literal}'"
 
 
-def run_selectivity_sweep(store: ChunkStore) -> dict[str, Any]:
-    """Benchmark approximate sweep queries and report achieved selectivity."""
+def run_selectivity_sweep(store: ChunkStore, *, quiet: bool = False) -> dict[str, Any]:
+    """Benchmark approximate sweep queries and report achieved selectivity.
+
+    ``quiet=True`` suppresses the correctness PASS-path print for every
+    sweep point, matching ``run_query_benchmarks``'s own ``quiet`` parameter.
+    """
 
     if not isinstance(store, ChunkStore):
         raise TypeError("store must be a ChunkStore")
@@ -322,6 +358,7 @@ def run_selectivity_sweep(store: ChunkStore) -> dict[str, Any]:
             pushdown_engine,
             sql,
             query_name=point_name,
+            quiet=quiet,
         )
         if timed_result.row_count != probe.row_count:
             raise AssertionError(

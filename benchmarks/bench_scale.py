@@ -21,6 +21,7 @@ import gc
 import json
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from benchmarks.bench_query import _assert_equivalent
 from benchmarks.report import format_ms, format_pct, format_x, render_table
+from benchmarks.reporting import console
+from benchmarks.reporting.environment import git_commit, hardware_snapshot
+from benchmarks.reporting.validation import assert_equivalent_and_report
 from benchmarks.stats import confidence_interval_95, trimmed_mean_and_std
 from benchmarks.synthetic_data import generate_synthetic_ohlcv
 from src.baselines.full_scan import FullScanQueryEngine
@@ -71,11 +75,19 @@ def run_scale_point(
     warmup: int,
     run_full_scan: bool = True,
 ) -> dict[str, Any]:
+    print()
     print(
-        f"\n=== scale point {label}: {num_symbols} symbols, "
-        f"~{num_symbols * ROWS_PER_SYMBOL:,} rows "
-        f"(query trials={num_trials}, warmup={warmup}, "
-        f"full_scan={run_full_scan}) ==="
+        console.section_header(
+            f"Scale point {label}: {num_symbols:,} symbols, "
+            f"~{num_symbols * ROWS_PER_SYMBOL:,} rows",
+            [
+                console.phase(
+                    "MEASURE",
+                    f"query trials={num_trials}, warmup={warmup}, "
+                    f"full_scan={run_full_scan}",
+                ),
+            ],
+        )
     )
 
     # Collect the previous scale point's garbage before measuring this one's
@@ -93,10 +105,13 @@ def run_scale_point(
     ingest_seconds = time.perf_counter() - t0
     rss_after_ingest_bytes = psutil.Process().memory_info().rss
     print(
-        f"ingested {store.total_rows:,} rows into {store.total_chunks:,} "
-        f"chunks in {ingest_seconds:.2f}s "
-        f"({store.total_rows / ingest_seconds:,.0f} rows/s); "
-        f"RSS after ingest = {rss_after_ingest_bytes / (1024 * 1024):,.1f} MB"
+        console.phase(
+            "BUILD",
+            f"Ingested {store.total_rows:,} rows into {store.total_chunks:,} "
+            f"chunks in {ingest_seconds:.2f}s "
+            f"({store.total_rows / ingest_seconds:,.0f} rows/s); "
+            f"RSS after ingest: {rss_after_ingest_bytes / (1024 * 1024):,.1f} MiB",
+        )
     )
 
     # Isolate pushdown label-evaluation cost from full query execution
@@ -129,10 +144,14 @@ def run_scale_point(
         ),
     }
     print(
-        f"pushdown evaluate_pushdown() isolated: narrow="
-        f"{pushdown_eval['narrow_mean_ms']:.4f}ms broad="
-        f"{pushdown_eval['broad_mean_ms']:.4f}ms over {store.total_chunks:,} labels "
-        f"({pushdown_eval['ns_per_label_broad']:.1f} ns/label)"
+        console.phase(
+            "MEASURE",
+            f"Isolated evaluate_pushdown(): narrow="
+            f"{pushdown_eval['narrow_mean_ms']:.4f}ms broad="
+            f"{pushdown_eval['broad_mean_ms']:.4f}ms over "
+            f"{store.total_chunks:,} labels "
+            f"({pushdown_eval['ns_per_label_broad']:.1f} ns/label)",
+        )
     )
 
     one_symbol = f"SYN{0:06d}"
@@ -173,8 +192,16 @@ def run_scale_point(
             # Same correctness gate bench_query.py uses for every other query
             # in this project: full row/value/dtype equality, not just a
             # count match, so a bug that returns the right count but wrong
-            # rows can't pass silently at scale.
-            _assert_equivalent(full_scan_result, pushdown_result, query_name=name)
+            # rows can't pass silently at scale. Printed via the shared
+            # validation wrapper -- see benchmarks/reporting/validation.py.
+            assert_equivalent_and_report(
+                lambda: _assert_equivalent(
+                    full_scan_result, pushdown_result, query_name=name
+                ),
+                name=f"{label} / {name}",
+                full_scan_row_count=full_scan_result.row_count,
+                pushdown_row_count=pushdown_result.row_count,
+            )
             full_scan_mean, full_scan_std, _ = trimmed_mean_and_std(
                 full_scan_times, LATENCY_TRIM_FRACTION
             )
@@ -184,16 +211,19 @@ def run_scale_point(
         query_results[name] = entry
         ci_low, ci_high = entry["pushdown_ci95_low_ms"], entry["pushdown_ci95_high_ms"]
         print(
-            f"  {name}: pushdown={format_ms(entry['pushdown_mean_ms'])} "
-            f"[{ci_low:.3f},{ci_high:.3f}] "
-            + (
-                f"full_scan={format_ms(entry['full_scan_mean_ms'])} "
-                f"speedup={format_x(entry['speedup'])} "
-                if run_full_scan
-                else "(full scan skipped) "
+            console.phase(
+                "RESULT",
+                f"{name}: pushdown={format_ms(entry['pushdown_mean_ms'])} "
+                f"95% CI=[{ci_low:.3f},{ci_high:.3f}]ms "
+                + (
+                    f"full_scan={format_ms(entry['full_scan_mean_ms'])} "
+                    f"speedup={format_x(entry['speedup'])} "
+                    if run_full_scan
+                    else "(full scan skipped) "
+                )
+                + f"pruning_rate={format_pct(entry['chunks_skipped_ratio'])} "
+                f"candidates={entry['candidate_chunks']}/{entry['total_chunks']}",
             )
-            + f"skipped={format_pct(entry['chunks_skipped_ratio'])} "
-            f"candidates={entry['candidate_chunks']}/{entry['total_chunks']}"
         )
 
     return {
@@ -212,6 +242,25 @@ def run_scale_point(
 
 
 def main() -> int:
+    print(
+        console.benchmark_header(
+            index=3,
+            total=5,
+            name="Scale Sweep",
+            question=(
+                "Does zone-map pushdown's advantage over a naive full scan "
+                "grow, shrink, or stay flat as row/chunk count scales?"
+            ),
+            config_lines=[
+                "Dataset  : synthetic (same statistical shape as Dataset A), "
+                "symbol count scaled 10 -> 10,000",
+                "Chunking : MonthlyBoundary (same default as Dataset A)",
+                "Queries  : narrow_symbol_eq (single symbol), "
+                "broad_full_range (full date range)",
+            ],
+        )
+    )
+
     scale_points = [
         {
             "label": "1x",
@@ -245,11 +294,13 @@ def main() -> int:
 
     results = [run_scale_point(**point) for point in scale_points]
 
-    print("\nScale sweep -- summary")
+    print()
+    print(console.phase("RESULT", "Scale sweep -- summary (all scale points)"))
     headers = [
         "Scale",
         "Symbols",
         "Rows",
+        "Chunks",
         "Ingest rows/s",
         "Narrow speedup",
         "Broad speedup",
@@ -264,6 +315,7 @@ def main() -> int:
                 point["label"],
                 f"{point['num_symbols']:,}",
                 f"{point['total_rows']:,}",
+                f"{point['total_chunks']:,}",
                 f"{point['ingest_rows_per_second']:,.0f}",
                 format_x(narrow["speedup"]),
                 format_x(broad["speedup"]),
@@ -272,15 +324,49 @@ def main() -> int:
         )
     print(render_table(headers, rows))
 
+    first_narrow_speedup = results[0]["queries"]["narrow_symbol_eq"]["speedup"]
+    last_narrow_speedup = results[-1]["queries"]["narrow_symbol_eq"]["speedup"]
+    first_broad_speedup = results[0]["queries"]["broad_full_range"]["speedup"]
+    last_broad_speedup = results[-1]["queries"]["broad_full_range"]["speedup"]
+    print()
+    print(
+        console.interpretation(
+            observation=(
+                f"Narrow-query speedup goes from {format_x(first_narrow_speedup)} "
+                f"at {results[0]['label']} to {format_x(last_narrow_speedup)} at "
+                f"{results[-1]['label']}; broad-query speedup goes from "
+                f"{format_x(first_broad_speedup)} to {format_x(last_broad_speedup)} "
+                "over the same range."
+            ),
+            evidence=(
+                "ns/label (isolated pushdown-evaluation cost) and the per-point "
+                "pruning rate printed above are the measured basis for this trend."
+            ),
+            limitation=(
+                f"Tested up to {results[-1]['num_symbols']:,} synthetic symbols / "
+                f"{results[-1]['total_rows']:,} rows on one machine; not validated "
+                "beyond this range or under concurrent query load."
+            ),
+        )
+    )
+
     results_dir = PROJECT_ROOT / "benchmarks" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     output_path = results_dir / "scale_sweep.json"
     # Wrapped in an object, not a bare array: charts/generate_all.py's loader
     # requires every *.json file in benchmarks/results/ to parse to a JSON
-    # object.
-    payload = {"points": results}
+    # object. "points" is byte-identical to what this file has always
+    # written; "generated_at_utc"/"git_commit"/"hardware" are new, additive
+    # provenance keys only -- see BENCHMARK_OUTPUT_AUDIT.md Section 9, item 1.
+    payload = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "git_commit": git_commit(),
+        "hardware": hardware_snapshot(),
+        "points": results,
+    }
     output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(f"\nWrote {output_path}")
+    print()
+    print(console.phase("EXPORT", str(output_path)))
     return 0
 
 
