@@ -86,6 +86,48 @@ def test_validate_schema_rejects_non_string_symbol() -> None:
         validate_schema(frame)
 
 
+@pytest.mark.parametrize("invalid", [None, np.nan, pd.NA, "", "   ", "\t\n"])
+def test_validate_schema_rejects_missing_or_blank_symbol(invalid: object) -> None:
+    frame = _merged_frame()
+    frame.loc[1, "symbol"] = invalid
+
+    with pytest.raises(ValueError, match="symbol"):
+        validate_schema(frame)
+
+
+@pytest.mark.parametrize("invalid", [None, "", "   "])
+def test_load_dataset_rejects_missing_or_blank_symbol(
+    tmp_path: Path, invalid: str | None
+) -> None:
+    frame = _merged_frame()
+    frame.loc[1, "symbol"] = invalid
+    path = tmp_path / "invalid-symbol.csv"
+    frame.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="symbol"):
+        load_dataset(path)
+
+
+def test_load_dataset_preserves_exact_nonblank_symbol(tmp_path: Path) -> None:
+    frame = _merged_frame()
+    frame["symbol"] = [" AAPL ", " AAPL ", "'MSFT'", "'MSFT'"]
+    path = tmp_path / "exact-symbol.csv"
+    frame.to_csv(path, index=False)
+
+    loaded = load_dataset(path)
+
+    assert list(loaded["symbol"]) == list(frame["symbol"])
+
+
+def test_validate_schema_accepts_pandas_string_symbols() -> None:
+    frame = _merged_frame()
+    frame["symbol"] = frame["symbol"].astype("string")
+
+    validate_schema(frame)
+
+    assert frame["symbol"].tolist() == ["AAPL", "AAPL", "MSFT", "MSFT"]
+
+
 def test_load_single_symbol_round_trip(tmp_path: Path) -> None:
     frame = _single_symbol_frame()
     path = tmp_path / "aapl.csv"

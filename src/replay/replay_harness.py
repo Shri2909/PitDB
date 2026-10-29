@@ -13,6 +13,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.replay.data_loader import _validate_symbol_column
+from src.store.validation import RESERVED_VALUE_COLUMNS
+
 DEFAULT_VALUE_COLUMNS = ("open", "high", "low", "close", "volume")
 
 
@@ -42,13 +45,26 @@ class ReplayHarness(Iterator[dict[str, Any]]):
             if value_columns is None
             else list(value_columns)
         )
+        if any(
+            not isinstance(column, str) or not column.strip() for column in selected
+        ):
+            raise ValueError("value_columns must contain non-empty string column names")
         if len(selected) != len(set(selected)):
             raise ValueError("value_columns must not contain duplicates")
+        conflicts = sorted(RESERVED_VALUE_COLUMNS.intersection(selected))
+        if conflicts:
+            raise ValueError(
+                "value_columns contain reserved columns: " + ", ".join(conflicts)
+            )
 
         required = {"timestamp", "symbol", *selected}
         missing = sorted(required.difference(df.columns))
         if missing:
             raise ValueError("missing replay columns: " + ", ".join(missing))
+
+        # Validate all keys before exposing the first row so a later malformed
+        # symbol cannot cause a partially ingested replay.
+        _validate_symbol_column(df)
 
         self._df = df
         self._value_columns = selected
@@ -75,6 +91,11 @@ class ReplayHarness(Iterator[dict[str, Any]]):
             raise ValueError(
                 "symbol must be a string at replay index "
                 f"{self._index}; found {type(symbol).__name__}"
+            )
+        if not symbol.strip():
+            raise ValueError(
+                "symbol must not be empty or whitespace-only at replay index "
+                f"{self._index}"
             )
 
         try:

@@ -136,8 +136,47 @@ def test_next_row_rejects_non_string_symbol(replay_frame: pd.DataFrame) -> None:
     bad_frame = replay_frame.copy()
     bad_frame.loc[0, "symbol"] = 123
 
-    with pytest.raises(ValueError, match="symbol must be a string"):
+    with pytest.raises(ValueError, match="symbol.*non-string"):
         ReplayHarness(bad_frame).next_row()
+
+
+@pytest.mark.parametrize("invalid", [None, np.nan, pd.NA, "", "   ", "\t\n"])
+def test_replay_rejects_later_invalid_symbol_before_consumption(
+    replay_frame: pd.DataFrame, invalid: object
+) -> None:
+    bad_frame = replay_frame.copy()
+    bad_frame.loc[len(bad_frame) - 1, "symbol"] = invalid
+
+    with pytest.raises(ValueError, match="symbol"):
+        ReplayHarness(bad_frame)
+
+
+def test_replay_preserves_exact_nonblank_symbols(replay_frame: pd.DataFrame) -> None:
+    replay_frame.loc[0, "symbol"] = " 'AAPL' "
+
+    assert next(ReplayHarness(replay_frame))["symbol"] == " 'AAPL' "
+
+
+def test_replay_accepts_custom_value_columns_without_close(
+    replay_frame: pd.DataFrame,
+) -> None:
+    replay_frame["metric"] = np.arange(len(replay_frame), dtype=np.float64)
+
+    row = next(ReplayHarness(replay_frame, value_columns=["metric"]))
+
+    np.testing.assert_array_equal(row["values"], np.array([0.0]))
+
+
+@pytest.mark.parametrize(
+    "reserved", ["symbol", "timestamp", "_txn_time", "_is_correction"]
+)
+def test_replay_rejects_reserved_value_columns(
+    replay_frame: pd.DataFrame, reserved: str
+) -> None:
+    replay_frame[reserved] = 1.0
+
+    with pytest.raises(ValueError, match="reserved|column"):
+        ReplayHarness(replay_frame, value_columns=["close", reserved])
 
 
 def test_next_row_rejects_non_numeric_values(replay_frame: pd.DataFrame) -> None:

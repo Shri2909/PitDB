@@ -110,7 +110,13 @@ def _coerce_numeric_columns(df: pd.DataFrame) -> None:
 
 
 def _validate_symbol_column(df: pd.DataFrame) -> None:
+    """Reject unusable keys without changing valid symbol strings."""
+
     symbol = df[SYMBOL_COLUMN]
+    if symbol.isna().any():
+        count = int(symbol.isna().sum())
+        raise ValueError(f"symbol column contains {count} null symbol(s)")
+
     if not (
         pd.api.types.is_object_dtype(symbol.dtype)
         or pd.api.types.is_string_dtype(symbol.dtype)
@@ -120,11 +126,12 @@ def _validate_symbol_column(df: pd.DataFrame) -> None:
             f"found {symbol.dtype}"
         )
 
-    non_null = symbol.dropna()
-    invalid_mask = ~non_null.map(lambda value: isinstance(value, str))
+    invalid_mask = ~symbol.map(lambda value: isinstance(value, str))
     if invalid_mask.any():
-        example = non_null[invalid_mask].iloc[0]
+        example = symbol[invalid_mask].iloc[0]
         raise ValueError("symbol column contains a non-string value: " + repr(example))
+    if symbol.map(lambda value: not value.strip()).any():
+        raise ValueError("symbol column contains an empty or whitespace-only symbol")
 
 
 def validate_schema(df: pd.DataFrame) -> None:
@@ -145,8 +152,8 @@ def validate_schema(df: pd.DataFrame) -> None:
             f"found {df[TIMESTAMP_COLUMN].dtype}"
         )
 
-    _coerce_numeric_columns(df)
     _validate_symbol_column(df)
+    _coerce_numeric_columns(df)
 
 
 def load_single_symbol(filepath: Path) -> pd.DataFrame:
@@ -184,6 +191,7 @@ def load_dataset(merged_csv_path: Path) -> pd.DataFrame:
     _require_columns(df, DATASET_COLUMNS)
     _reject_completely_null_columns(df)
     _parse_timestamp_utc(df)
+    validate_schema(df)
 
     duplicate_mask = df.duplicated(subset=[TIMESTAMP_COLUMN, SYMBOL_COLUMN], keep=False)
     if duplicate_mask.any():
@@ -204,8 +212,6 @@ def load_dataset(merged_csv_path: Path) -> pd.DataFrame:
             "timestamps must be sorted ascending within each symbol; "
             "unsorted symbols: " + ", ".join(unsorted_symbols)
         )
-
-    validate_schema(df)
 
     symbols = sorted(df[SYMBOL_COLUMN].dropna().unique().tolist())
     date_start = df[TIMESTAMP_COLUMN].min().isoformat()
