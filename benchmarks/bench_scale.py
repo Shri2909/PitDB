@@ -18,7 +18,6 @@ reported) at those scales rather than silently skipping the measurement.
 from __future__ import annotations
 
 import gc
-import json
 import sys
 import time
 from datetime import datetime, timezone
@@ -33,13 +32,17 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from benchmarks.bench_query import _assert_equivalent
+from benchmarks.measurement import measure_query_paths
 from benchmarks.report import format_ms, format_pct, format_x, render_table
 from benchmarks.reporting import console
 from benchmarks.reporting.environment import git_commit, hardware_snapshot
-from benchmarks.reporting.validation import assert_equivalent_and_report
-from benchmarks.stats import confidence_interval_95, trimmed_mean_and_std
+from benchmarks.reporting.provenance import (
+    create_manifest,
+    dataframe_fingerprint,
+    write_result,
+)
+from benchmarks.stats import latency_summary, time_interleaved
 from benchmarks.synthetic_data import generate_synthetic_ohlcv
-from src.baselines.full_scan import FullScanQueryEngine
 from src.query.executor import QueryExecutor
 from src.query.pushdown import evaluate_pushdown
 from src.query.sql_parser import parse_where_clause
@@ -47,24 +50,6 @@ from src.store.chunk_boundary import MonthlyBoundary
 from src.store.chunk_store import ChunkStore
 
 ROWS_PER_SYMBOL = 501  # matches Dataset A's ~2-year daily row count per symbol
-# Matches bench_query.py's and bench_bitemporal.py's own use of the same
-# constant -- see trimmed_mean_and_std's docstring. Applied only to the
-# decompression-heavy query-latency measurements below, not the microsecond-
-# scale isolated evaluate_pushdown() loop, which stays on a plain mean (same
-# split bench_bitemporal.py already makes).
-LATENCY_TRIM_FRACTION = 0.15
-
-
-def _time_calls(fn, num_trials: int, warmup: int) -> tuple[np.ndarray, Any]:
-    for _ in range(warmup):
-        fn()
-    times = np.empty(num_trials, dtype=np.float64)
-    result = None
-    for trial in range(num_trials):
-        t0 = time.perf_counter()
-        result = fn()
-        times[trial] = time.perf_counter() - t0
-    return times, result
 
 
 def run_scale_point(
@@ -99,6 +84,7 @@ def run_scale_point(
         num_symbols=num_symbols, rows_per_symbol=ROWS_PER_SYMBOL, seed=1
     )
 
+    fixture = dataframe_fingerprint(df)
     t0 = time.perf_counter()
     store = ChunkStore(chunk_boundary=MonthlyBoundary())
     store.ingest_dataframe(df)
@@ -134,6 +120,15 @@ def run_scale_point(
         evaluate_pushdown(broad_predicate, store.labels)
         broad_pushdown_times[trial] = time.perf_counter() - t0
     pushdown_eval = {
+        "narrow_raw_samples_seconds": narrow_pushdown_times.tolist(),
+        "broad_raw_samples_seconds": broad_pushdown_times.tolist(),
+        "num_trials": pushdown_trials,
+        "acquisition_order": ["narrow"] * pushdown_trials + ["broad"] * pushdown_trials,
+        "method": (
+            "evaluate_pushdown(predicate, store.labels); includes label "
+            "materialization, traversal and full candidate/skipped ID "
+            "outputs; no AS OF index"
+        ),
         "narrow_mean_ms": float(np.mean(narrow_pushdown_times)) * 1000.0,
         "broad_mean_ms": float(np.mean(broad_pushdown_times)) * 1000.0,
         "ns_per_label_narrow": (
@@ -158,75 +153,91 @@ def run_scale_point(
     narrow_sql = f"SELECT * FROM data WHERE symbol = '{one_symbol}'"
     broad_sql = "SELECT * FROM data WHERE timestamp >= '2023-01-01'"
 
-    pushdown_engine = QueryExecutor(store)
     query_results: dict[str, Any] = {}
     for name, sql in (
         ("narrow_symbol_eq", narrow_sql),
         ("broad_full_range", broad_sql),
     ):
-        pushdown_times, pushdown_result = _time_calls(
-            lambda sql=sql: pushdown_engine.execute(sql), num_trials, warmup
-        )
-        pushdown_mean, pushdown_std, pushdown_kept_n = trimmed_mean_and_std(
-            pushdown_times, LATENCY_TRIM_FRACTION
-        )
-        pushdown_ci_low, pushdown_ci_high = confidence_interval_95(
-            pushdown_mean, pushdown_std, pushdown_kept_n
-        )
+        if run_full_scan:
+            timing_metrics, pushdown_result = measure_query_paths(
+                store,
+                sql,
+                num_trials=num_trials,
+                warmup=warmup,
+                query_name=f"{label} / {name}",
+                quiet=False,
+            )
+            push = timing_metrics["pushdown_query"]
+        else:
+            pushdown_engine = QueryExecutor(store)
+            vectorized_engine = QueryExecutor(store, enable_pruning=False)
+            samples, results, order = time_interleaved(
+                {
+                    "pushdown_query": lambda: pushdown_engine.execute(sql),
+                    "vectorized_full_scan": lambda: vectorized_engine.execute(sql),
+                },
+                num_trials,
+                warmup,
+            )
+            pushdown_result = results["pushdown_query"]
+            _assert_equivalent(
+                results["vectorized_full_scan"], pushdown_result, query_name=name
+            )
+            push = latency_summary(samples["pushdown_query"])
+            vector = latency_summary(samples["vectorized_full_scan"])
+            timing_metrics = {
+                "pushdown_query": push,
+                "vectorized_full_scan": vector,
+                "vectorized_full_scan_speedup": vector["mean_latency_seconds"]
+                / push["mean_latency_seconds"],
+                "acquisition_order": order,
+                "timing_method": (
+                    "interleaved paired rounds; alternating engine order; "
+                    "warm single process"
+                ),
+                "full_scan_status": "not measured: explicitly disabled",
+            }
         entry: dict[str, Any] = {
             "sql": sql,
-            "pushdown_mean_ms": pushdown_mean * 1000.0,
-            "pushdown_std_ms": pushdown_std * 1000.0,
-            "pushdown_ci95_low_ms": pushdown_ci_low * 1000.0,
-            "pushdown_ci95_high_ms": pushdown_ci_high * 1000.0,
+            "pushdown_mean_ms": push["mean_latency_seconds"] * 1000,
+            "pushdown_std_ms": push["std_latency_seconds"] * 1000,
+            "pushdown_ci95_low_ms": push["ci95_low_seconds"] * 1000,
+            "pushdown_ci95_high_ms": push["ci95_high_seconds"] * 1000,
             "row_count": pushdown_result.row_count,
             "chunks_skipped_ratio": pushdown_result.pushdown.chunks_skipped_ratio,
             "candidate_chunks": pushdown_result.pushdown.candidate_count,
             "total_chunks": store.total_chunks,
+            **timing_metrics,
         }
         if run_full_scan:
-            full_scan_engine = FullScanQueryEngine(store)
-            full_scan_times, full_scan_result = _time_calls(
-                lambda sql=sql: full_scan_engine.execute(sql), num_trials, warmup
+            entry["full_scan_mean_ms"] = timing_metrics["query_full_scan_mean_ms"]
+            entry["full_scan_std_ms"] = (
+                timing_metrics["full_scan"]["std_latency_seconds"] * 1000
             )
-            # Same correctness gate bench_query.py uses for every other query
-            # in this project: full row/value/dtype equality, not just a
-            # count match, so a bug that returns the right count but wrong
-            # rows can't pass silently at scale. Printed via the shared
-            # validation wrapper -- see benchmarks/reporting/validation.py.
-            assert_equivalent_and_report(
-                lambda: _assert_equivalent(
-                    full_scan_result, pushdown_result, query_name=name
-                ),
-                name=f"{label} / {name}",
-                full_scan_row_count=full_scan_result.row_count,
-                pushdown_row_count=pushdown_result.row_count,
-            )
-            full_scan_mean, full_scan_std, _ = trimmed_mean_and_std(
-                full_scan_times, LATENCY_TRIM_FRACTION
-            )
-            entry["full_scan_mean_ms"] = full_scan_mean * 1000.0
-            entry["full_scan_std_ms"] = full_scan_std * 1000.0
-            entry["speedup"] = entry["full_scan_mean_ms"] / entry["pushdown_mean_ms"]
+            entry["speedup"] = timing_metrics["query_speedup"]
         query_results[name] = entry
         ci_low, ci_high = entry["pushdown_ci95_low_ms"], entry["pushdown_ci95_high_ms"]
         print(
             console.phase(
                 "RESULT",
                 f"{name}: pushdown={format_ms(entry['pushdown_mean_ms'])} "
-                f"95% CI=[{ci_low:.3f},{ci_high:.3f}]ms "
+                f"approx. normal interval (raw mean)=[{ci_low:.3f},{ci_high:.3f}]ms "
                 + (
                     f"full_scan={format_ms(entry['full_scan_mean_ms'])} "
                     f"speedup={format_x(entry['speedup'])} "
                     if run_full_scan
                     else "(full scan skipped) "
                 )
+                + "vectorized_control_speedup="
+                f"{format_x(entry['vectorized_full_scan_speedup'])} "
                 + f"pruning_rate={format_pct(entry['chunks_skipped_ratio'])} "
                 f"candidates={entry['candidate_chunks']}/{entry['total_chunks']}",
             )
         )
 
     return {
+        "fixture": fixture,
+        "synthetic_seed": 1,
         "label": label,
         "num_symbols": num_symbols,
         "total_rows": store.total_rows,
@@ -292,6 +303,14 @@ def main() -> int:
         },
     ]
 
+    manifest = create_manifest(
+        parameters={
+            "benchmark": "scale_sweep",
+            "scale_points": scale_points,
+            "rows_per_symbol": ROWS_PER_SYMBOL,
+            "synthetic_seed": 1,
+        }
+    )
     results = [run_scale_point(**point) for point in scale_points]
 
     print()
@@ -364,7 +383,7 @@ def main() -> int:
         "hardware": hardware_snapshot(),
         "points": results,
     }
-    output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    write_result(output_path, payload, manifest)
     print()
     print(console.phase("EXPORT", str(output_path)))
     return 0

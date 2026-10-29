@@ -8,19 +8,13 @@ full-scan) -- each measured **both before and after** compact_corrections(),
 so the actual effect of compaction is always visible directly in this
 benchmark's own output, never requiring an ad hoc script to see it.
 
-Mirrors benchmarks/bench_scale.py's conventions -- ddof=1 sample std,
-stats.py's confidence_interval_95 normal approximation, and the same
-full-scan/pushdown correctness gate (_assert_equivalent) every other
-benchmark in this suite uses before reporting any speedup number. Also
-mirrors bench_query.py's annotate_pairwise_significance: every pre/post
-comparison is flagged as statistically distinguishable or not via
-stats.py's intervals_overlap, rather than letting point estimates alone
-imply an effect that might just be noise.
+Uses interleaved three-engine timing, raw-sample summaries and exact output
+checks. Before/after comparisons are descriptive; they are not significance
+tests and compaction is necessarily measured after the original state.
 """
 
 from __future__ import annotations
 
-import json
 import sys
 import time
 from datetime import datetime, timezone
@@ -34,21 +28,20 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from benchmarks.bench_query import _assert_equivalent
-from benchmarks.bench_scale import _time_calls
 from benchmarks.config import NUM_TRIALS as DEFAULT_NUM_TRIALS
+from benchmarks.measurement import measure_query_paths
 from benchmarks.report import format_ms, format_pct, format_x, render_box_table
 from benchmarks.reporting import console
 from benchmarks.reporting.environment import git_commit, hardware_snapshot
-from benchmarks.reporting.validation import assert_equivalent_and_report
+from benchmarks.reporting.provenance import (
+    create_manifest,
+    dataframe_fingerprint,
+    write_result,
+)
 from benchmarks.stats import (
-    confidence_interval_95,
     intervals_overlap,
-    trimmed_mean_and_std,
 )
 from benchmarks.synthetic_data import generate_synthetic_ohlcv
-from src.baselines.full_scan import FullScanQueryEngine
-from src.query.executor import QueryExecutor
 from src.query.predicate import PredicateNode
 from src.query.pushdown import evaluate_pushdown
 from src.query.sql_parser import parse_where_clause
@@ -60,12 +53,6 @@ ROWS_PER_SYMBOL = 501  # matches bench_scale.py's Dataset-A-shaped row count
 CORRECTION_RATES = [0.0, 0.01, 0.05, 0.20, 0.50]
 QUERY_NUM_TRIALS = DEFAULT_NUM_TRIALS  # matches benchmarks/config.py's convention
 QUERY_WARMUP = 2
-# Drops the slowest 15% of query-latency trials before reporting mean/std/CI
-# -- see trimmed_mean_and_std's docstring. Decompression-heavy queries in
-# this benchmark are far more exposed to one-off OS/GC hiccups (multi-hundred
-# ms per trial) than the microsecond-scale isolated pushdown-eval loop below,
-# which is left on a plain mean.
-LATENCY_TRIM_FRACTION = 0.15
 PUSHDOWN_ISOLATED_TRIALS = 50
 
 
@@ -133,71 +120,35 @@ def measure_scenario(
         predicate, store.labels, as_of=as_of_value, as_of_index=store
     )
 
-    pushdown_engine = QueryExecutor(store)
-    full_scan_engine = FullScanQueryEngine(store)
-
-    pushdown_query_times, pushdown_query_result = _time_calls(
-        lambda: pushdown_engine.execute(sql), QUERY_NUM_TRIALS, QUERY_WARMUP
+    timing_metrics, _query_result = measure_query_paths(
+        store,
+        sql,
+        num_trials=QUERY_NUM_TRIALS,
+        warmup=QUERY_WARMUP,
+        query_name=query_name,
     )
-    full_scan_query_times, full_scan_query_result = _time_calls(
-        lambda: full_scan_engine.execute(sql), QUERY_NUM_TRIALS, QUERY_WARMUP
-    )
-    # Same correctness gate every other benchmark in this suite uses: full
-    # row/value/dtype equality between the naive and pushdown paths, now
-    # with corrections and an AS OF cutoff in play, before any latency is
-    # reported. quiet=True: re-rendered inside each correction level's own
-    # "Correctness validation"/"Correctness revalidation" block once
-    # printing starts (see _print_correction_level), not live here during
-    # this still-silent computation phase.
-    assert_equivalent_and_report(
-        lambda: _assert_equivalent(
-            full_scan_query_result, pushdown_query_result, query_name=query_name
-        ),
-        name=query_name,
-        full_scan_row_count=full_scan_query_result.row_count,
-        pushdown_row_count=pushdown_query_result.row_count,
-        quiet=True,
-    )
-
-    # Trimmed, not plain, mean: latency outliers here are one-directional
-    # (a GC pause or OS scheduling hiccup only ever makes a trial slower),
-    # and a single such trial can otherwise blow out the reported CI far
-    # wider than every other measurement's -- see LATENCY_TRIM_FRACTION.
-    pushdown_mean, pushdown_std, pushdown_n = trimmed_mean_and_std(
-        pushdown_query_times, LATENCY_TRIM_FRACTION
-    )
-    ci_low, ci_high = confidence_interval_95(pushdown_mean, pushdown_std, pushdown_n)
-    full_scan_mean, _, _ = trimmed_mean_and_std(
-        full_scan_query_times, LATENCY_TRIM_FRACTION
-    )
-
     return {
         "total_chunks": store.total_chunks,
-        "pushdown_eval_ns_per_label": (
-            float(np.mean(pushdown_times)) * 1e9 / store.total_chunks
+        "pushdown_eval_ns_per_label": float(np.mean(pushdown_times))
+        * 1e9
+        / store.total_chunks,
+        "pushdown_eval_raw_samples_seconds": pushdown_times.tolist(),
+        "pushdown_eval_num_trials": PUSHDOWN_ISOLATED_TRIALS,
+        "pushdown_eval_method": (
+            "evaluate_pushdown(predicate, store.labels, as_of=cutoff, "
+            "as_of_index=store); includes labels materialization and full ID "
+            "outputs"
         ),
         "chunks_skipped_ratio": pushdown_result.chunks_skipped_ratio,
         "candidate_chunks": pushdown_result.candidate_count,
-        "query_pushdown_mean_ms": pushdown_mean * 1000.0,
-        "query_pushdown_ci95_low_ms": ci_low * 1000.0,
-        "query_pushdown_ci95_high_ms": ci_high * 1000.0,
-        "query_full_scan_mean_ms": full_scan_mean * 1000.0,
-        "query_speedup": full_scan_mean / pushdown_mean if pushdown_mean else 0.0,
-        "row_count": pushdown_query_result.row_count,
+        **timing_metrics,
     }
 
 
 def _compare(
     label: str, before: dict[str, Any], after: dict[str, Any]
 ) -> dict[str, Any]:
-    """Flag whether a before/after pushdown-latency delta is real or noise,
-    the same way bench_query.py's annotate_pairwise_significance does.
-
-    Computed for every correction level's JSON output regardless of
-    whether the current terminal format prints it (it currently doesn't --
-    see _print_correction_level); still available to anyone reading
-    bitemporal_sweep.json directly.
-    """
+    """Describe before/after estimates; overlapping intervals are not a test."""
 
     overlap = intervals_overlap(
         before["query_pushdown_ci95_low_ms"],
@@ -210,7 +161,7 @@ def _compare(
         "before_mean_ms": before["query_pushdown_mean_ms"],
         "after_mean_ms": after["query_pushdown_mean_ms"],
         "ci95_overlap": overlap,
-        "distinguishable_from_noise": not overlap,
+        "inference": "none; interval overlap is descriptive",
     }
 
 
@@ -227,6 +178,7 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
     df = generate_synthetic_ohlcv(
         num_symbols=NUM_SYMBOLS, rows_per_symbol=ROWS_PER_SYMBOL, seed=1
     )
+    fixture = dataframe_fingerprint(df)
     store = ChunkStore(chunk_boundary=MonthlyBoundary())
     store.ingest_dataframe(df)
     base_chunks = store.total_chunks
@@ -327,6 +279,11 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
         )
 
     entry = {
+        "fixture": fixture,
+        "synthetic_seed": 1,
+        "correction_seed": 2,
+        "query_num_trials": QUERY_NUM_TRIALS,
+        "query_warmup": QUERY_WARMUP,
         "label": label,
         "correction_rate": correction_rate,
         "as_of_cutoff": as_of_value.isoformat() if as_of_value is not None else None,
@@ -339,6 +296,11 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
         "correction_rows_per_second": correction_rows_per_second,
         "compacted_chunks": compacted,
         "compaction_seconds": compaction_seconds,
+        "compaction_num_trials": 1,
+        "compaction_measurement_method": (
+            "single compact_corrections() call; no repeated distribution "
+            "or causal significance test"
+        ),
         "compaction_rows_per_second": compaction_rows_per_second,
         "total_chunks": store.total_chunks,
         "correction_chunks_after_compaction": store.total_chunks - base_chunks,
@@ -348,7 +310,7 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
             **({"as_of_pre_compaction": as_of_pre} if as_of_pre else {}),
             **({"as_of_post_compaction": as_of_post} if as_of_post else {}),
         },
-        "compaction_significance": {
+        "compaction_comparisons": {
             "current": current_comparison,
             **({"as_of": as_of_comparison} if as_of_comparison else {}),
         },
@@ -368,13 +330,14 @@ def _matrix_row(
     name: str, storage_state: str, scenario: dict[str, Any] | None
 ) -> list[str]:
     if scenario is None:
-        return [name, storage_state, "N/A", "N/A", "N/A"]
+        return [name, storage_state, "N/A", "N/A", "N/A", "N/A"]
     return [
         name,
         storage_state,
         format_ms(scenario["query_full_scan_mean_ms"]),
         format_ms(scenario["query_pushdown_mean_ms"]),
         format_x(scenario["query_speedup"]),
+        format_x(scenario["vectorized_full_scan_speedup"]),
     ]
 
 
@@ -449,7 +412,14 @@ def _print_correction_level(*, index: int, total: int, entry: dict[str, Any]) ->
     print()
     print(
         render_box_table(
-            ["Query", "Storage state", "Full scan", "Pushdown", "Speedup"],
+            [
+                "Query",
+                "Storage state",
+                "Row-wise scan",
+                "Pushdown",
+                "vs. row-wise",
+                "vs. vectorized",
+            ],
             [
                 _matrix_row("Current state", "Before compaction", current_pre),
                 _matrix_row("Historical AS OF", "Before compaction", as_of_pre),
@@ -520,7 +490,14 @@ def _print_correction_level(*, index: int, total: int, entry: dict[str, Any]) ->
     print()
     print(
         render_box_table(
-            ["Query", "Storage state", "Full scan", "Pushdown", "Speedup"],
+            [
+                "Query",
+                "Storage state",
+                "Row-wise scan",
+                "Pushdown",
+                "vs. row-wise",
+                "vs. vectorized",
+            ],
             [
                 _matrix_row("Current state", "After compaction", current_post),
                 _matrix_row("Historical AS OF", "After compaction", as_of_post),
@@ -602,6 +579,18 @@ def main() -> int:
     # computed (quiet=True inside measure_scenario) before anything prints,
     # so the header and Configuration block below can report real base-row
     # counts and the actual AS OF cutoff instead of placeholders.
+    manifest = create_manifest(
+        parameters={
+            "benchmark": "bitemporal_sweep",
+            "num_symbols": NUM_SYMBOLS,
+            "rows_per_symbol": ROWS_PER_SYMBOL,
+            "correction_rates": CORRECTION_RATES,
+            "num_trials": QUERY_NUM_TRIALS,
+            "warmup": QUERY_WARMUP,
+            "synthetic_seed": 1,
+            "correction_seed": 2,
+        }
+    )
     results = [
         run_correction_rate(label=f"{rate:.0%}", correction_rate=rate)
         for rate in CORRECTION_RATES
@@ -619,7 +608,7 @@ def main() -> int:
         "hardware": hardware_snapshot(),
         "points": results,
     }
-    output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    write_result(output_path, payload, manifest)
 
     print(
         console.pitdb_header(

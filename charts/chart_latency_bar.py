@@ -187,7 +187,7 @@ def generate_chart(
             full_scan_means,
             width=bar_width,
             yerr=full_scan_stds,
-            label="Full scan",
+            label="Row-wise full scan",
             color="#7B8492",
             edgecolor="white",
             linewidth=0.8,
@@ -215,7 +215,7 @@ def generate_chart(
         axis.set_xticks(positions, _QUERY_ORDER)
         axis.set_ylabel(y_label)
         axis.set_title(
-            "Query Latency: Full Scan vs. Pushdown Query (Q1–Q5)",
+            "Query Latency: Row-wise Full Scan vs. Pushdown Query (Q1–Q5)",
             pad=16,
         )
         axis.legend(
@@ -246,7 +246,7 @@ def generate_chart(
             dpi=300,
             bbox_inches="tight",
             metadata={
-                "Title": "Query Latency: Full Scan vs. Pushdown Query (Q1–Q5)",
+                "Title": "Query Latency: Row-wise Full Scan vs. Pushdown Query (Q1–Q5)",
                 "Description": (
                     "Grouped bar chart comparing full-scan and pushdown-query "
                     "mean query latency for Q1 through Q5, with one-standard-"

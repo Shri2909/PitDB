@@ -5,7 +5,7 @@ benchmarks/bench_bitemporal.py, which measures every scenario both before
 and after compact_corrections() so the compaction's real effect is always
 directly visible, never requiring a separate before/after run to see):
 
-1. Correction chunks pruned by AS OF (post-compaction) -- transaction-time
+1. All chunks skipped by AS OF (post-compaction) -- transaction-time
    pushdown pruning still works after chunks have been merged.
 2. The "current" (no AS OF) scenario's pushdown latency, pre- vs.
    post-compaction, against full-scan -- this is the actual proof that
@@ -118,8 +118,8 @@ def generate_chart(
             [ratio * 100.0 for ratio in as_of_skipped_ratio],
             color=color_skipped,
         )
-        ax0.set_title("Correction chunks pruned by AS OF\n(after compaction)")
-        ax0.set_ylabel("Chunks skipped (%)")
+        ax0.set_title("All chunks skipped by AS OF\n(after compaction)")
+        ax0.set_ylabel("All store chunks skipped (%)")
         ax0.set_xlabel("Correction rate")
         ax0.grid(axis="y", color="#D7DCE2", linewidth=0.7, zorder=0)
 
@@ -147,7 +147,7 @@ def generate_chart(
             marker="^",
             linewidth=1.6,
             linestyle="--",
-            label="Full scan (pre-compaction)",
+            label="Row-wise full scan (pre-compaction)",
         )
         ax1.set_yscale("log")
         ax1.set_title("'Current' (no AS OF) query latency:\ncompaction's real effect")

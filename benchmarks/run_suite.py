@@ -1,25 +1,9 @@
-"""Complete PitDB benchmark suite: all five benchmarks behind one entry point.
+"""Run all benchmark producers under one identity and export consistent charts.
 
-This module changes nothing about how any individual benchmark measures,
-validates, or computes its results -- it calls each benchmark's existing,
-unmodified entry point (``run_all.run_all``, ``bench_scale.main``,
-``bench_bitemporal.main``, ``bench_chunk_granularity.main``) in the same
-order and with the same default parameters ``make bench`` / ``make
-bench-scale`` / direct invocation already use, then generates charts from
-the results the same way ``make charts`` already does. What this module
-adds on top, once per run, is: one consolidated "PITDB BENCHMARK SUITE
-SUMMARY" block after everything finishes, and a plain-text transcript of
-the complete run written to disk.
-
-A correctness failure (``AssertionError`` from
-``benchmarks.bench_query._assert_equivalent``, propagated through
-``benchmarks.reporting.validation.assert_equivalent_and_report``) in one
-benchmark does not abort the whole suite: it is caught here, that
-benchmark is marked FAILED in the final summary, and the remaining
-benchmarks still run -- so the summary can report on all five instead of
-stopping at the first failure. Any other exception is not caught; it
-propagates and aborts the process exactly as running that benchmark
-standalone already would.
+Correctness failures are collected so the summary can show every benchmark.
+Charts are suppressed if a benchmark fails or is incomplete. Chart failures
+are reported and return a nonzero suite status; prior artifacts are never
+used to fill a failed producer's output.
 """
 
 from __future__ import annotations
@@ -27,7 +11,9 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -41,6 +27,7 @@ from benchmarks.bench_chunk_granularity import DEFAULT_GRANULARITY_KEY
 from benchmarks.report import format_pct, format_x, render_box_table
 from benchmarks.reporting import console
 from benchmarks.reporting.environment import git_commit, hardware_snapshot
+from benchmarks.reporting.provenance import RUN_ID_ENV
 from charts.generate_all import generate_all as generate_all_charts
 
 RESULTS_DIR = PROJECT_ROOT / "benchmarks" / "results"
@@ -133,14 +120,14 @@ def _run_benchmarks_1_and_2() -> tuple[list[str], list[str]]:
 
     memory = result.get("memory")
     if memory is not None:
-        raw_bytes = memory["raw_uncompressed_bytes"]
+        raw_bytes = memory["raw_numeric_payload_bytes"]
         packed_bytes = memory["column_payload_bytes"]
         reduction = 1.0 - (packed_bytes / raw_bytes if raw_bytes else 0.0)
         row_2 = [
             "2",
             "Memory footprint",
             "PASSED",
-            f"Reduction: {format_pct(reduction)}",
+            f"Numeric-buffer reduction: {format_pct(reduction)}",
         ]
     else:
         row_2 = ["2", "Memory footprint", "N/A", "N/A (not run)"]
@@ -205,16 +192,30 @@ def _run_benchmark_5() -> list[str]:
     return ["5", "Chunk-granularity trade-off", "PASSED", primary]
 
 
+@contextlib.contextmanager
+def _suite_run_identity():
+    previous = os.environ.get(RUN_ID_ENV)
+    os.environ[RUN_ID_ENV] = uuid.uuid4().hex
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(RUN_ID_ENV, None)
+        else:
+            os.environ[RUN_ID_ENV] = previous
+
+
 def run_suite() -> int:
     """Run all five benchmarks, generate charts, and print one consolidated
-    suite summary. Returns 0 if every benchmark's correctness gate passed,
-    1 if any benchmark's correctness gate failed.
+    suite summary. Returns 0 only when all benchmark gates and chart export
+    succeed; failures or incomplete runs return 1.
     """
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     started_at = datetime.now(timezone.utc)
 
-    with _tee_stdout() as tee:
+    # One run identity links all producers; restore the caller's environment.
+    with _suite_run_identity(), _tee_stdout() as tee:
         rows: list[list[str]] = []
         row_1, row_2 = _run_benchmarks_1_and_2()
         rows.append(row_1)
@@ -223,14 +224,25 @@ def run_suite() -> int:
         rows.append(_run_benchmark_4())
         rows.append(_run_benchmark_5())
 
-        charts_generated: dict[str, Path] | None
-        try:
-            charts_generated = generate_all_charts(
-                results_dir=RESULTS_DIR, output_dir=CHARTS_DIR
+        charts_generated: dict[str, Path] | None = None
+        if all(row[2] == "PASSED" for row in rows):
+            try:
+                charts_generated = generate_all_charts(
+                    results_dir=RESULTS_DIR, output_dir=CHARTS_DIR
+                )
+            except (FileNotFoundError, ImportError, ValueError) as exc:
+                print(console.phase("WARNING", f"Chart generation failed: {exc}"))
+        else:
+            print(
+                console.phase(
+                    "WARNING",
+                    (
+                        "Charts suppressed: benchmark run failed or is incomplete; "
+                        "prior "
+                        "artifacts were not used."
+                    ),
+                )
             )
-        except (FileNotFoundError, ImportError, ValueError) as exc:
-            charts_generated = None
-            print(console.phase("WARNING", f"Chart generation failed: {exc}"))
 
         finished_at = datetime.now(timezone.utc)
         hardware = hardware_snapshot()
@@ -241,6 +253,7 @@ def run_suite() -> int:
         # not a count of individual queries/scenarios within a benchmark,
         # which this suite-level summary does not track separately.
         correctness_failures = failed_count
+        suite_failed = passed_count != len(rows) or not charts_generated
 
         print()
         print(console.pitdb_title("PITDB BENCHMARK SUITE SUMMARY"))
@@ -295,8 +308,8 @@ def run_suite() -> int:
                         str(tee.buffer.getvalue().count("[WARNING]")),
                     ),
                     (
-                        "Performance claims valid",
-                        "YES" if correctness_failures == 0 else "NO",
+                        "All differential equality gates passed",
+                        "YES" if passed_count == len(rows) else "NO",
                     ),
                 ],
             )
@@ -312,7 +325,7 @@ def run_suite() -> int:
                         "Charts",
                         str(CHARTS_DIR)
                         if charts_generated
-                        else "N/A (chart generation failed -- see [WARNING] above)",
+                        else "N/A (charts suppressed or failed; see warning)",
                     ),
                     ("Plain-text log", str(LOG_PATH)),
                 ],
@@ -322,7 +335,7 @@ def run_suite() -> int:
         print("Final status")
         overall_status = (
             "BENCHMARK SUITE COMPLETED WITH FAILURES"
-            if correctness_failures
+            if suite_failed
             else "ALL BENCHMARKS COMPLETED SUCCESSFULLY"
         )
         print(f"  {overall_status}")
@@ -336,7 +349,7 @@ def run_suite() -> int:
 
     LOG_PATH.write_text(transcript, encoding="utf-8")
 
-    return 1 if correctness_failures else 0
+    return 1 if suite_failed else 0
 
 
 def main() -> int:

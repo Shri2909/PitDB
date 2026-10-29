@@ -259,18 +259,20 @@ def run_memory_benchmarks(
     store: ChunkStore,
     *,
     build_store_fn: Callable[[], ChunkStore] | None = None,
-) -> dict[str, int | str]:
+) -> dict[str, Any]:
     """Measure retained representations and peak RSS of the indexed Q1 path.
 
     Raw and chunk-store retained sizes are representation-level measurements;
-    unlike two absolute process RSS readings, they remain comparable even when
-    the caller already holds both objects. Query metrics report absolute peak
+    with different accounting methods; they do not establish a total-memory
+    compression ratio. Equal-column numeric payloads are compared separately.
+    Query metrics report absolute peak
     RSS as well as growth above a garbage-collected pre-query baseline.
 
     ``build_store_fn``, if given, is a zero-argument callable that
     constructs a fresh ``ChunkStore`` equivalent to ``store`` from the same
-    source data -- used only to measure "store construction"'s own peak RSS
-    in isolation (a second, redundant build; every other measurement here
+    source data -- used only to measure "store construction"'s peak RSS
+    while the existing source/store remain resident (a second, redundant
+    build; every other measurement here
     uses the already-built ``store`` the caller passed in). When omitted,
     construction-RSS fields are not included in the returned dict.
     """
@@ -278,6 +280,27 @@ def run_memory_benchmarks(
     if not isinstance(store, ChunkStore):
         raise TypeError("store must be a ChunkStore")
     raw_bytes = _raw_size_bytes(raw_data)
+    numeric_columns = list(store.value_columns)
+    if isinstance(raw_data, pd.DataFrame):
+        missing = set(numeric_columns) - set(raw_data.columns)
+        if missing:
+            raise ValueError(
+                f"raw_data is missing stored numeric columns: {sorted(missing)}"
+            )
+        numeric_bytes = sum(
+            int(raw_data[column].to_numpy(dtype=np.float64).nbytes)
+            for column in numeric_columns
+        )
+    else:
+        if raw_data.ndim != 2 or raw_data.shape[1] != len(numeric_columns):
+            raise ValueError(
+                "raw numeric arrays must have one column per stored value column"
+            )
+        numeric_bytes = int(np.asarray(raw_data, dtype=np.float64).nbytes)
+    if len(raw_data) != store.total_rows:
+        raise ValueError(
+            "raw_data and store must contain the same number of physical rows"
+        )
     store_bytes = _deep_size_bytes(store)
     breakdown = _memory_breakdown(store)
 
@@ -309,12 +332,40 @@ def run_memory_benchmarks(
 
     result: dict[str, Any] = {
         "raw_uncompressed_bytes": raw_bytes,
+        "raw_numeric_payload_bytes": numeric_bytes,
+        "numeric_payload_columns": numeric_columns,
+        "numeric_payload_dtype": "float64",
+        "numeric_payload_excludes": [
+            "timestamp",
+            "symbol",
+            "index",
+            "metadata",
+            "Python object overhead",
+        ],
+        "numeric_payload_ratio": numeric_bytes / store.total_column_bytes
+        if store.total_column_bytes
+        else None,
+        "retained_size_accounting": (
+            "Raw DataFrame uses pandas memory_usage(index=True, deep=True); "
+            "store is an approximate Python object-graph walk. These differ "
+            "in accounting and do not establish equivalent-content "
+            "total-memory reduction."
+        ),
+        "rss_scope": (
+            "Observed process RSS in one shared process holding source data "
+            "and existing stores; per-operation increase uses its own "
+            "baseline; 1ms sampler may miss brief peaks; allocator retention "
+            "affects comparisons"
+        ),
         "chunk_store_bytes": store_bytes,
         "column_payload_bytes": store.total_column_bytes,
         **breakdown,
         "idle_rss_bytes": idle_rss,
         "full_scan_q1_baseline_rss_bytes": full_scan_baseline_rss,
         "full_scan_q1_peak_rss_bytes": full_scan_peak_rss,
+        "full_scan_q1_peak_rss_increase_bytes": max(
+            0, full_scan_peak_rss - full_scan_baseline_rss
+        ),
         "q1_peak_rss_bytes": peak_rss,
         "q1_baseline_rss_bytes": baseline_rss,
         "q1_peak_rss_increase_bytes": max(0, peak_rss - baseline_rss),
@@ -326,6 +377,9 @@ def run_memory_benchmarks(
     if build_store_fn is not None:
         result["store_construction_baseline_rss_bytes"] = construction_baseline_rss
         result["store_construction_peak_rss_bytes"] = construction_peak_rss
+        result["store_construction_peak_rss_increase_bytes"] = max(
+            0, construction_peak_rss - construction_baseline_rss
+        )
     return result
 
 

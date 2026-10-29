@@ -35,9 +35,7 @@ def render_table(headers: list[str], rows: list[list[str]]) -> str:
     def render_row(cells: list[str]) -> str:
         first, rest = cells[0], cells[1:]
         rest_widths = widths[1:]
-        aligned_rest = [
-            cell.rjust(width) for cell, width in zip(rest, rest_widths, strict=True)
-        ]
+        aligned_rest = [cell.rjust(width) for cell, width in zip(rest, rest_widths)]
         return "  ".join([first.ljust(widths[0]), *aligned_rest])
 
     separator = "  ".join("-" * width for width in widths)
@@ -72,7 +70,7 @@ def render_box_table(headers: list[str], rows: list[list[str]]) -> str:
         return left + junction.join("─" * (width + 2) for width in widths) + right
 
     def render_row(cells: list[str]) -> str:
-        padded = [cell.ljust(width) for cell, width in zip(cells, widths, strict=True)]
+        padded = [cell.ljust(width) for cell, width in zip(cells, widths)]
         return "│ " + " │ ".join(padded) + " │"
 
     lines = [

@@ -86,10 +86,9 @@ def _propagated_speedup_std(
 ) -> float:
     """Propagate one-standard-deviation latency errors through both paths.
 
-    The benchmark stores aggregate latency statistics rather than paired
-    per-trial speedup samples. First-order independent-error propagation is
-    therefore the available estimate for the speedup ratio's standard
-    deviation.
+    This is a descriptive first-order variability approximation, not a
+    confidence interval or significance test. It ignores covariance between
+    the paired observations, which remain available in the result JSON.
     """
 
     relative_variance = (full_scan_std / full_scan_mean) ** 2 + (
@@ -98,16 +97,8 @@ def _propagated_speedup_std(
     return speedup * math.sqrt(relative_variance)
 
 
-# A propagated speedup std can exceed the speedup itself for a fast (few-ms)
-# pushdown query measured over a small NUM_TRIALS sample, where a single
-# trial hit by GC/OS scheduling noise dominates that point's variance --
-# verified directly: instrumenting the real sweep showed no single cause
-# (GC fires on nearly every trial at every point without this happening;
-# it's a rare, larger stall, not routine collection). Rather than crashing
-# chart generation over one noisy-but-otherwise-valid point, the lower
-# error whisker is capped so it can never reach zero on this log-scale
-# chart, and a warning is printed so the noise stays visible instead of
-# being silently hidden.
+# Descriptive propagated variability can exceed a positive speedup. Cap the
+# lower log-scale whisker and disclose the clipping without inferring its cause.
 _MAX_LOWER_ERROR_FRACTION = 0.99
 
 
@@ -165,8 +156,8 @@ def _extract_series(
                 f"Warning: points[{index}] (selectivity={selectivity:g}) has a "
                 f"propagated speedup std ({speedup_std:.3f}) close to or "
                 f"exceeding its own speedup ({speedup:.3f}) -- one or more "
-                "timing trials for this point were likely disrupted by a GC "
-                "pause or OS scheduling stall. Clipping the lower error "
+                "timing trials for this point have high observed variability. "
+                "Clipping the lower error "
                 "whisker rather than hiding this point; consider re-running "
                 "the benchmark or increasing NUM_TRIALS if this recurs."
             )
@@ -279,7 +270,7 @@ def generate_chart(
         axis.set_xlabel("Actual selectivity")
         axis.set_ylabel("Speedup factor (x)")
         axis.set_title(
-            "Query Speedup vs. Selectivity (Pushdown Query vs. Full Scan)",
+            "Query Speedup vs. Selectivity (vs. Row-wise Full Scan)",
             pad=16,
         )
 
@@ -317,9 +308,7 @@ def generate_chart(
             dpi=300,
             bbox_inches="tight",
             metadata={
-                "Title": (
-                    "Query Speedup vs. Selectivity (Pushdown Query vs. Full Scan)"
-                ),
+                "Title": ("Query Speedup vs. Selectivity (vs. Row-wise Full Scan)"),
                 "Description": (
                     "Log-log line chart of pushdown-query speedup versus "
                     "measured selectivity with one-standard-deviation error "

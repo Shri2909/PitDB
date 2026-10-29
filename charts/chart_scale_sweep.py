@@ -136,7 +136,7 @@ def generate_chart(
                 marker="^",
                 linewidth=1.6,
                 linestyle="--",
-                label="Full scan, broad filter",
+                label="Row-wise full scan, broad filter",
             )
         ax2.set_yscale("log")
         ax2.set_title("Query latency vs scale (log scale)")

@@ -52,6 +52,7 @@ from benchmarks.report import (
 )
 from benchmarks.reporting import console
 from benchmarks.reporting.environment import git_commit
+from benchmarks.reporting.provenance import create_manifest, finish_manifest
 from src.query.predicate import AlwaysTrue, And, Comparison, In
 from src.query.sql_parser import extract_as_of, parse_where_clause
 from src.replay.data_loader import load_dataset
@@ -279,10 +280,7 @@ def _query_observation(metrics: dict[str, Any]) -> str:
         return "High pruning was achieved for this narrow query."
     if pruning_rate >= 0.3:
         return "Moderate pruning was achieved for this query."
-    return (
-        "Low pruning was achieved; this query needs most of the table, so a "
-        "small speedup is expected here, not a regression."
-    )
+    return "Low pruning was achieved; use both full-scan controls to assess latency."
 
 
 def _print_fixed_query_block(
@@ -350,13 +348,20 @@ def _print_fixed_query_block(
     pushdown_ms = pushdown["mean_latency_seconds"] * 1_000.0
     pushdown_ci_low = pushdown["ci95_low_seconds"] * 1_000.0
     pushdown_ci_high = pushdown["ci95_high_seconds"] * 1_000.0
+    vectorized = pushdown["vectorized_full_scan"]
     box = render_box_table(
-        ["Engine", "Mean latency", "95% confidence interval"],
+        ["Engine", "Raw mean latency", "Approx. normal interval (raw mean)"],
         [
             [
-                "Full scan",
+                "Row-wise full scan",
                 format_ms(full_scan_ms),
                 f"{full_scan_ci_low:.3f} – {full_scan_ci_high:.3f} ms",
+            ],
+            [
+                "Vectorized full scan (no pruning)",
+                format_ms(vectorized["mean_latency_seconds"] * 1000),
+                f"{vectorized['ci95_low_seconds'] * 1000:.3f} – "
+                f"{vectorized['ci95_high_seconds'] * 1000:.3f} ms",
             ],
             [
                 "Zone-map pushdown",
@@ -371,7 +376,13 @@ def _print_fixed_query_block(
     print(
         console.titled_block(
             "  Speedup",
-            [("Full scan / pushdown", format_x(metrics["speedup"]))],
+            [
+                ("Row-wise full scan / pushdown", format_x(metrics["speedup"])),
+                (
+                    "Vectorized full scan / pushdown",
+                    format_x(pushdown["vectorized_full_scan_speedup"]),
+                ),
+            ],
             indent=4,
         )
     )
@@ -456,7 +467,10 @@ def _print_benchmark_1(
     print()
     print("Question")
     print(
-        "  How does zone-map pushdown performance change as query selectivity narrows?"
+        (
+            "  How does zone-map pushdown performance change as query "
+            "selectivity narrows?"
+        )
     )
     print()
     print(
@@ -470,8 +484,11 @@ def _print_benchmark_1(
                 ("Chunk granularity", "monthly"),
                 ("Warmup runs", str(warmup_runs)),
                 ("Measured runs", str(num_trials)),
-                ("Timing statistic", "outlier-trimmed mean"),
-                ("Confidence interval", "95%"),
+                ("Timing statistic", "raw arithmetic mean; all samples retained"),
+                (
+                    "Uncertainty",
+                    "normal approximation on raw mean; coverage unverified",
+                ),
                 ("Random seed", "N/A (real market data, no synthetic generation)"),
             ],
         )
@@ -609,8 +626,8 @@ def _print_benchmark_1(
             )
 
     speedups = {name: metrics["speedup"] for name, metrics in fixed.items()}
-    narrowest_name = max(speedups, key=lambda name: speedups[name])
-    broadest_name = min(speedups, key=lambda name: speedups[name])
+    narrowest_name = min(fixed, key=lambda name: fixed[name]["selectivity"])
+    broadest_name = max(fixed, key=lambda name: fixed[name]["selectivity"])
 
     print()
     print(console.dash_section("[RESULT]"))
@@ -712,7 +729,7 @@ def _print_benchmark_2(
         )
     )
 
-    raw_bytes = memory["raw_uncompressed_bytes"]
+    raw_bytes = memory["raw_numeric_payload_bytes"]
     packed_bytes = memory["column_payload_bytes"]
     raw_bytes_per_row = raw_bytes / row_count if row_count else 0.0
     packed_bytes_per_row = packed_bytes / row_count if row_count else 0.0
@@ -722,7 +739,7 @@ def _print_benchmark_2(
     print()
     print(
         console.dash_section(
-            "[STORAGE REPRESENTATION]", " Directly comparable storage measurements"
+            "[STORAGE REPRESENTATION]", " Equal-column float64 payload measurements"
         )
     )
     print()
@@ -731,7 +748,7 @@ def _print_benchmark_2(
             ["Representation", "Total memory", "Bytes per row"],
             [
                 [
-                    "Raw DataFrame columns",
+                    "Raw numeric columns (float64)",
                     format_bytes(raw_bytes),
                     f"{raw_bytes_per_row:.1f}",
                 ],
@@ -748,7 +765,7 @@ def _print_benchmark_2(
         console.titled_block(
             "  Packed-storage ratio",
             [
-                ("PitDB / raw DataFrame", format_x(packed_over_raw)),
+                ("PitDB / raw numeric payload", format_x(packed_over_raw)),
                 ("Storage reduction", format_pct(storage_reduction)),
             ],
             indent=4,
@@ -760,12 +777,29 @@ def _print_benchmark_2(
             "  Comparison status",
             [
                 ("Valid comparison", "YES"),
-                ("Reason", "Both measure raw column storage."),
+                (
+                    "Reason",
+                    (
+                        "Identical numeric columns and float64 dtype; "
+                        "timestamp, symbol, "
+                        "index and metadata excluded from both."
+                    ),
+                ),
             ],
             indent=4,
         )
     )
 
+    print(
+        console.field_block(
+            [
+                (
+                    "Full raw DataFrame (pandas, deep)",
+                    format_bytes(memory["raw_uncompressed_bytes"]),
+                )
+            ]
+        )
+    )
     print()
     print(
         console.dash_section(
@@ -824,24 +858,36 @@ def _print_benchmark_2(
             [
                 "Store construction",
                 format_bytes(construction_peak),
-                format_bytes(max(0, construction_peak - idle_rss)),
+                format_bytes(
+                    max(
+                        0,
+                        construction_peak
+                        - memory["store_construction_baseline_rss_bytes"],
+                    )
+                ),
             ]
         )
     rss_rows.append(
         [
             "Full-scan query",
             format_bytes(full_scan_peak),
-            format_bytes(max(0, full_scan_peak - idle_rss)),
+            format_bytes(
+                max(0, full_scan_peak - memory["full_scan_q1_baseline_rss_bytes"])
+            ),
         ]
     )
     rss_rows.append(
         [
             "Pushdown query",
             format_bytes(pushdown_peak),
-            format_bytes(max(0, pushdown_peak - idle_rss)),
+            format_bytes(max(0, pushdown_peak - memory["q1_baseline_rss_bytes"])),
         ]
     )
-    print(render_box_table(["Operation", "Peak RSS", "Increase from idle"], rss_rows))
+    print(
+        render_box_table(
+            ["Operation", "Peak RSS", "Increase from own baseline"], rss_rows
+        )
+    )
 
     print()
     print(console.dash_section("[RESULT]"))
@@ -850,7 +896,7 @@ def _print_benchmark_2(
             [
                 ("Correctness", "PASSED"),
                 ("Packed storage", format_bytes(packed_bytes)),
-                ("Raw DataFrame storage", format_bytes(raw_bytes)),
+                ("Raw numeric payload", format_bytes(raw_bytes)),
                 ("Storage reduction", format_pct(storage_reduction)),
                 (
                     "Full object footprint",
@@ -868,13 +914,23 @@ def _print_benchmark_2(
                 (
                     "Observation",
                     f"Packed storage uses {format_pct(storage_reduction)} less "
-                    "memory than the equivalent raw DataFrame representation.",
+                    "numeric-buffer bytes than the same float64 columns.",
                 ),
                 (
                     "Valid claim",
-                    "Packed storage is compared only with raw table storage.",
+                    (
+                        "This ratio covers numeric buffers only; total retained "
+                        "representations use different accounting."
+                    ),
                 ),
-                ("Limitation", "Python object overhead is reported separately."),
+                (
+                    "Limitation",
+                    (
+                        "Raw full DataFrame pandas accounting and the "
+                        "store object-graph "
+                        "estimate are separate metrics; RSS is process-wide."
+                    ),
+                ),
             ],
             indent=4,
         )
@@ -911,11 +967,19 @@ def run_all(*, include_memory: bool = False) -> dict[str, Any]:
     results_dir = _project_path(_config_value("RESULTS_DIR", _DEFAULT_RESULTS_DIR))
     results_dir.mkdir(parents=True, exist_ok=True)
 
+    manifest = create_manifest(
+        parameters={
+            "benchmark": "daily_queries_and_memory",
+            "include_memory": include_memory,
+            "num_trials": _config_value("NUM_TRIALS", 15),
+            "warmup_runs": _config_value("WARMUP_RUNS", 3),
+        },
+        fixture_paths=[path for path in (daily_path, intraday_path) if path.is_file()],
+    )
     generated_at = datetime.now(timezone.utc).isoformat()
     hardware = _hardware_info()
     hardware["generated_at_utc"] = generated_at
     hardware_path = results_dir / "hardware.json"
-    _write_json(hardware_path, hardware)
 
     num_trials = _config_value("NUM_TRIALS", 15)
     warmup_runs = _config_value("WARMUP_RUNS", 3)
@@ -950,11 +1014,8 @@ def run_all(*, include_memory: bool = False) -> dict[str, Any]:
         "source": str(daily_path),
         "store": _store_summary(daily_store),
         "fixed_queries": fixed_queries,
-        # Flags which consecutive fixed queries' pushdown-query latencies are
-        # (or are not) distinguishable from noise at 95% confidence. Still
-        # computed and persisted to queries.json even though Benchmark 1's
-        # exact-format terminal output does not currently print this table.
-        "pairwise_significance": annotate_pairwise_significance(fixed_queries),
+        # Descriptive interval overlap only; this does not test significance.
+        "pairwise_interval_comparisons": annotate_pairwise_significance(fixed_queries),
         "selectivity_sweep": run_selectivity_sweep(daily_store, quiet=True),
         "price_pushdown_demonstration": run_price_pushdown_demonstration(daily_store),
     }
@@ -970,6 +1031,9 @@ def run_all(*, include_memory: bool = False) -> dict[str, Any]:
             ),
         }
     queries_path = results_dir / "queries.json"
+    queries["manifest"] = finish_manifest(manifest)
+    hardware["manifest"] = queries["manifest"]
+    _write_json(hardware_path, hardware)
     _write_json(queries_path, queries)
 
     _print_benchmark_1(
@@ -1005,6 +1069,7 @@ def run_all(*, include_memory: bool = False) -> dict[str, Any]:
                 build_store_fn=lambda: _build_daily_store(daily_data),
             ),
         }
+        memory["manifest"] = finish_manifest(manifest)
         _write_json(memory_path, memory)
         print()
         _print_benchmark_2(

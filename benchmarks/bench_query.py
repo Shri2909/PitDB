@@ -9,30 +9,21 @@ compared before any speedup is reported.
 from __future__ import annotations
 
 import math
-import time
 from datetime import datetime, timedelta
-from typing import Any, Protocol
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from benchmarks.reporting.validation import assert_equivalent_and_report
 from benchmarks.stats import (
-    confidence_interval_95,
     intervals_overlap,
-    trimmed_mean_and_std,
+    latency_summary,
+    time_interleaved,
 )
 from src.baselines.full_scan import FullScanQueryEngine
 from src.query.executor import QueryExecutor, QueryResult
 from src.store.chunk_store import ChunkStore
-
-# Drops the slowest 15% of latency trials before computing statistics -- see
-# trimmed_mean_and_std's docstring and benchmarks/bench_bitemporal.py's own
-# use of the same constant. Without this, a single slow trial (a GC pause, an
-# OS scheduling hiccup) can blow out a reported confidence interval far wider
-# than every other measurement's -- observed directly in this file's own
-# selectivity sweep, where the 1% point's untrimmed std exceeded its mean.
-LATENCY_TRIM_FRACTION = 0.15
 
 try:
     from benchmarks.config import (
@@ -64,10 +55,6 @@ except ModuleNotFoundError:
     SELECTIVITY_SWEEP_TARGETS = [1.0, 0.5, 0.1, 0.01, 0.001]
 
 
-class _QueryEngine(Protocol):
-    def execute(self, sql: str) -> QueryResult: ...
-
-
 def _validate_benchmark_configuration() -> None:
     if not isinstance(NUM_TRIALS, int) or NUM_TRIALS <= 0:
         raise ValueError("NUM_TRIALS must be a positive integer")
@@ -75,24 +62,6 @@ def _validate_benchmark_configuration() -> None:
         raise ValueError("WARMUP_RUNS must be a non-negative integer")
     if not isinstance(BENCHMARK_QUERIES, dict) or not BENCHMARK_QUERIES:
         raise ValueError("BENCHMARK_QUERIES must be a non-empty dictionary")
-
-
-def _time_query(engine: _QueryEngine, sql: str) -> tuple[np.ndarray, QueryResult]:
-    """Warm an engine, then measure complete query wall-clock latency."""
-
-    for _ in range(WARMUP_RUNS):
-        engine.execute(sql)
-
-    times = np.empty(NUM_TRIALS, dtype=np.float64)
-    result: QueryResult | None = None
-    for trial in range(NUM_TRIALS):
-        started = time.perf_counter()
-        result = engine.execute(sql)
-        times[trial] = time.perf_counter() - started
-
-    if result is None:  # Protected by configuration validation.
-        raise AssertionError("query timing completed without a result")
-    return times, result
 
 
 def _assert_equivalent(
@@ -121,29 +90,16 @@ def _assert_equivalent(
         ) from exc
 
 
-def _latency_metrics(times: np.ndarray, result: QueryResult) -> dict[str, float | int]:
-    mean, std, kept_n = trimmed_mean_and_std(times, LATENCY_TRIM_FRACTION)
-    ci_low, ci_high = confidence_interval_95(mean, std, kept_n)
-    return {
-        "mean_latency_seconds": mean,
-        "std_latency_seconds": std,
-        "ci95_low_seconds": ci_low,
-        "ci95_high_seconds": ci_high,
-        "row_count": result.row_count,
-    }
+def _latency_metrics(times: np.ndarray, result: QueryResult) -> dict[str, Any]:
+    return {**latency_summary(times), "row_count": result.row_count}
 
 
 def annotate_pairwise_significance(
     fixed_query_results: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Flag which consecutive fixed queries' pushdown-query latencies are
-    noise-plausible.
+    """Describe interval overlap without claiming statistical significance.
 
-    Two means whose 95% CIs overlap are not distinguishable from noise at
-    that confidence level -- reporting only the means (as the original
-    summary did) invites reading a real effect into differences like Q1 vs Q2
-    (1.200ms vs 1.174ms in the pre-fix baseline) that may just be OS
-    scheduling jitter or GC pauses.
+    The historical function name is retained for import compatibility.
     """
 
     names = list(fixed_query_results.keys())
@@ -164,18 +120,15 @@ def annotate_pairwise_significance(
                 "a_mean_ms": a["mean_latency_seconds"] * 1000.0,
                 "b_mean_ms": b["mean_latency_seconds"] * 1000.0,
                 "ci95_overlap": overlap,
-                "distinguishable_from_noise": not overlap,
+                "inference": "none; interval overlap is descriptive",
             }
         )
     return comparisons
 
 
 def _speedup(full_scan_times: np.ndarray, pushdown_times: np.ndarray) -> float:
-    # Trimmed, matching _latency_metrics -- otherwise the reported speedup
-    # would silently disagree with the mean_latency_seconds figures it's
-    # supposedly derived from.
-    full_scan_mean, _, _ = trimmed_mean_and_std(full_scan_times, LATENCY_TRIM_FRACTION)
-    pushdown_mean, _, _ = trimmed_mean_and_std(pushdown_times, LATENCY_TRIM_FRACTION)
+    full_scan_mean = float(np.mean(full_scan_times))
+    pushdown_mean = float(np.mean(pushdown_times))
     return full_scan_mean / pushdown_mean if pushdown_mean > 0.0 else math.inf
 
 
@@ -186,7 +139,9 @@ def _benchmark_pair(
     *,
     query_name: str,
     quiet: bool = False,
-) -> tuple[dict[str, float | int], dict[str, float | int], float, QueryResult]:
+    num_trials: int | None = None,
+    warmup: int | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], float, QueryResult]:
     """Time both paths under identical controls and prove equivalence.
 
     ``quiet=True`` suppresses only the correctness PASS-path print (see
@@ -195,8 +150,26 @@ def _benchmark_pair(
     behavior on failure are unaffected either way.
     """
 
-    full_scan_times, full_scan_result = _time_query(full_scan_engine, sql)
-    pushdown_times, pushdown_result = _time_query(pushdown_engine, sql)
+    vectorized_engine = QueryExecutor(pushdown_engine.store, enable_pruning=False)
+    samples, results, acquisition_order = time_interleaved(
+        {
+            "full_scan": lambda: full_scan_engine.execute(sql),
+            "vectorized_full_scan": lambda: vectorized_engine.execute(sql),
+            "pushdown_query": lambda: pushdown_engine.execute(sql),
+        },
+        NUM_TRIALS if num_trials is None else num_trials,
+        WARMUP_RUNS if warmup is None else warmup,
+    )
+    full_scan_times, full_scan_result = samples["full_scan"], results["full_scan"]
+    pushdown_times, pushdown_result = (
+        samples["pushdown_query"],
+        results["pushdown_query"],
+    )
+    _assert_equivalent(
+        full_scan_result,
+        results["vectorized_full_scan"],
+        query_name=f"{query_name} vectorized full scan",
+    )
     # Printed PASS/FAIL block around the same _assert_equivalent call this
     # project has always made before computing any speedup -- see
     # benchmarks/reporting/validation.py. A failure still raises and aborts
@@ -213,6 +186,19 @@ def _benchmark_pair(
 
     full_scan_metrics = _latency_metrics(full_scan_times, full_scan_result)
     pushdown_metrics = _latency_metrics(pushdown_times, pushdown_result)
+    # These fields travel with the pair so all callers export the same controls.
+    pushdown_metrics["vectorized_full_scan"] = _latency_metrics(
+        samples["vectorized_full_scan"], results["vectorized_full_scan"]
+    )
+    pushdown_metrics["vectorized_full_scan_speedup"] = _speedup(
+        samples["vectorized_full_scan"], pushdown_times
+    )
+    pushdown_metrics["acquisition_order"] = acquisition_order
+    pushdown_metrics["timing_method"] = (
+        "interleaved paired rounds; engine permutations rotate; full "
+        "cycles balanced; partial final cycle retained; warm single "
+        "process"
+    )
     pushdown_metrics["chunks_skipped_ratio"] = (
         pushdown_result.pushdown.chunks_skipped_ratio
     )

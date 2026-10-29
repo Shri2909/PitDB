@@ -14,24 +14,14 @@ DEFAULT_RESULTS_PATH = PROJECT_ROOT / "benchmarks/results/memory.json"
 DEFAULT_OUTPUT_PATH = PROJECT_ROOT / "charts/output/04_memory.png"
 
 _BYTES_PER_MEGABYTE = 1_000_000.0
-# raw_uncompressed_bytes and chunk_store_bytes are NOT an apples-to-apples
-# compression comparison: the former is pandas' own memory_usage(deep=True)
-# on the source DataFrame (all 7 columns, including the object-dtype symbol
-# column and index overhead); the latter is a full Python object-graph walk
-# of the whole ChunkStore (every datetime object, every dataclass, every
-# dict/list container -- overhead that has nothing to do with how much
-# actual data is stored). column_payload_bytes -- the packed float64 column
-# bytes ChunkStore actually persists -- is the fair comparison against raw
-# data; it was already computed by bench_memory.py but never charted here.
-# Labels spell out the differing accounting methods so this chart can't be
-# misread as a compression-ratio claim (that claim lives in
-# src/pipeline.py's _compression_ratio, a genuinely apples-to-apples metric
-# unit-tested in tests/test_end_to_end.py -- unrelated to this chart).
+# Equal-column numeric buffers are comparable. Full retained representations
+# and process RSS use different accounting and are displayed independently.
 _METRICS = (
-    ("raw_uncompressed_bytes", "Raw DataFrame\n(pandas, deep)"),
-    ("column_payload_bytes", "Column payload\n(packed floats)"),
-    ("chunk_store_bytes", "Chunk store\n(Python object graph)"),
-    ("q1_peak_rss_bytes", "Peak during\nQ1 query"),
+    ("raw_numeric_payload_bytes", "Raw numeric payload\n(float64, OHLCV)"),
+    ("column_payload_bytes", "Store numeric payload\n(float64, OHLCV)"),
+    ("raw_uncompressed_bytes", "Full DataFrame\n(pandas, deep)"),
+    ("chunk_store_bytes", "Full store\n(object graph estimate)"),
+    ("q1_peak_rss_bytes", "Q1 process RSS peak\n(shared process)"),
 )
 
 
@@ -149,7 +139,7 @@ def generate_chart(
         "axes.facecolor": "white",
         "savefig.facecolor": "white",
     }
-    colors = ["#7B8492", "#3F9142", "#2F6FA3", "#E07A2D"]
+    colors = ["#7B8492", "#3F9142", "#8699A7", "#2F6FA3", "#E07A2D"]
 
     with plt.rc_context(rc):
         figure, axis = plt.subplots(figsize=(9.0, 5.4), constrained_layout=True)
@@ -170,7 +160,7 @@ def generate_chart(
         axis.set_xticks(positions, labels)
         axis.set_ylabel("Memory (MB)")
         axis.set_title(
-            "Memory Footprint: Raw Data, Column Payload, Chunk Store, and Query Peak",
+            "Numeric Payloads, Retained Representations, and Process RSS",
             pad=16,
         )
         axis.grid(
@@ -189,7 +179,9 @@ def generate_chart(
         axis.tick_params(axis="y", width=0.8, color="#555555")
 
         label_offset = max(0.25, maximum * 0.02)
-        for bar, value in zip(bars, values, strict=True):
+        if len(bars) != len(values):
+            raise ValueError("rendered bars must match the measured memory values")
+        for bar, value in zip(bars, values):
             axis.text(
                 bar.get_x() + bar.get_width() / 2.0,
                 value + label_offset,
@@ -212,15 +204,12 @@ def generate_chart(
                     "and Query Peak"
                 ),
                 "Description": (
-                    "Bar chart comparing retained raw-DataFrame memory "
-                    "(pandas), the actual packed column-payload bytes "
-                    "ChunkStore persists, the chunk store's full Python "
-                    "object-graph footprint, and absolute peak process RSS "
-                    "observed while executing Q1 via the pushdown-query "
-                    "path. Raw DataFrame and chunk store use different "
-                    "accounting methods and are not a compression-ratio "
-                    "comparison; column payload vs. raw DataFrame is the "
-                    "fair one."
+                    "Equal-column float64 numeric payloads are compared directly. "
+                    "Full DataFrame pandas deep accounting, approximate store object "
+                    "graph and shared-process observed RSS peak are independent "
+                    "measurements; they do not establish equivalent-content total "
+                    "memory reduction. Timestamp, symbol, index and metadata are "
+                    "excluded from both numeric payload measurements."
                 ),
             },
         )

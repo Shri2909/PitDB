@@ -10,15 +10,12 @@ combined-predicate query and reports the actual measured curve -- evidence
 for an informed choice, not a change to MonthlyBoundary's status as the
 default.
 
-Mirrors benchmarks/bench_scale.py's and bench_query.py's conventions: ddof=1
-sample std via trimmed_mean_and_std, stats.py's confidence_interval_95, and
-the same full-scan/pushdown correctness gate (_assert_equivalent) every other
-benchmark in this suite uses before reporting any latency number.
+Uses interleaved three-engine timing, raw-sample summaries and exact output
+equality gates before reporting any speedup.
 """
 
 from __future__ import annotations
 
-import json
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -30,8 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from benchmarks.bench_memory import _deep_size_bytes
-from benchmarks.bench_query import _assert_equivalent
-from benchmarks.bench_scale import _time_calls
+from benchmarks.measurement import measure_query_paths
 from benchmarks.report import (
     format_bytes,
     format_ms,
@@ -41,11 +37,12 @@ from benchmarks.report import (
 )
 from benchmarks.reporting import console
 from benchmarks.reporting.environment import git_commit, hardware_snapshot
-from benchmarks.reporting.validation import assert_equivalent_and_report
-from benchmarks.stats import confidence_interval_95, trimmed_mean_and_std
+from benchmarks.reporting.provenance import (
+    create_manifest,
+    dataframe_fingerprint,
+    write_result,
+)
 from benchmarks.synthetic_data import generate_synthetic_ohlcv
-from src.baselines.full_scan import FullScanQueryEngine
-from src.query.executor import QueryExecutor
 from src.store.chunk_boundary import DurationBoundary, MonthlyBoundary
 from src.store.chunk_store import ChunkStore
 
@@ -54,10 +51,6 @@ ROWS_PER_SYMBOL = 501  # matches bench_scale.py's Dataset-A-shaped row count
 QUERY_SYMBOL = "SYN000003"
 QUERY_NUM_TRIALS = 15
 QUERY_WARMUP = 3
-# Matches bench_query.py's/bench_bitemporal.py's own use of the same
-# constant -- see trimmed_mean_and_std's docstring.
-LATENCY_TRIM_FRACTION = 0.15
-
 DEFAULT_GRANULARITY_KEY = "monthly"
 GRANULARITIES: list[dict[str, Any]] = [
     {
@@ -90,6 +83,7 @@ def run_granularity_point(granularity: dict[str, Any]) -> dict[str, Any]:
         num_symbols=NUM_SYMBOLS, rows_per_symbol=ROWS_PER_SYMBOL, seed=1
     )
 
+    fixture = dataframe_fingerprint(df)
     t0 = time.perf_counter()
     store = ChunkStore(chunk_boundary=granularity["boundary"])
     store.ingest_dataframe(df)
@@ -117,41 +111,12 @@ def run_granularity_point(granularity: dict[str, Any]) -> dict[str, Any]:
         "AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'"
     )
 
-    pushdown_engine = QueryExecutor(store)
-    full_scan_engine = FullScanQueryEngine(store)
-
-    pushdown_times, pushdown_result = _time_calls(
-        lambda: pushdown_engine.execute(sql), QUERY_NUM_TRIALS, QUERY_WARMUP
-    )
-    full_scan_times, full_scan_result = _time_calls(
-        lambda: full_scan_engine.execute(sql), QUERY_NUM_TRIALS, QUERY_WARMUP
-    )
-    # quiet=True: re-rendered inside this granularity's own "Correctness
-    # validation" block once printing starts (see _print_granularity_block),
-    # not live here during this still-silent computation phase. Same
-    # _assert_equivalent call, same exception behavior on failure.
-    query_name = f"granularity-{granularity['key']}"
-    assert_equivalent_and_report(
-        lambda: _assert_equivalent(
-            full_scan_result, pushdown_result, query_name=query_name
-        ),
-        name=query_name,
-        full_scan_row_count=full_scan_result.row_count,
-        pushdown_row_count=pushdown_result.row_count,
-        quiet=True,
-    )
-
-    pushdown_mean, pushdown_std, pushdown_kept_n = trimmed_mean_and_std(
-        pushdown_times, LATENCY_TRIM_FRACTION
-    )
-    pushdown_ci_low, pushdown_ci_high = confidence_interval_95(
-        pushdown_mean, pushdown_std, pushdown_kept_n
-    )
-    full_scan_mean, full_scan_std, full_scan_kept_n = trimmed_mean_and_std(
-        full_scan_times, LATENCY_TRIM_FRACTION
-    )
-    full_scan_ci_low, full_scan_ci_high = confidence_interval_95(
-        full_scan_mean, full_scan_std, full_scan_kept_n
+    timing_metrics, pushdown_result = measure_query_paths(
+        store,
+        sql,
+        num_trials=QUERY_NUM_TRIALS,
+        warmup=QUERY_WARMUP,
+        query_name=f"granularity-{granularity['key']}",
     )
 
     # Rows actually decompressed across every surviving candidate chunk --
@@ -166,6 +131,8 @@ def run_granularity_point(granularity: dict[str, Any]) -> dict[str, Any]:
     total_chunks = pushdown_result.pushdown.total_chunks
 
     return {
+        "fixture": fixture,
+        "synthetic_seed": 1,
         "key": granularity["key"],
         "label": granularity["label"],
         "window": granularity["window"],
@@ -182,14 +149,9 @@ def run_granularity_point(granularity: dict[str, Any]) -> dict[str, Any]:
         "chunks_pruned": total_chunks - candidate_chunks,
         "rows_scanned": rows_scanned,
         "row_count": pushdown_result.row_count,
-        "full_scan_row_count": full_scan_result.row_count,
-        "query_pushdown_mean_ms": pushdown_mean * 1000.0,
-        "query_pushdown_ci95_low_ms": pushdown_ci_low * 1000.0,
-        "query_pushdown_ci95_high_ms": pushdown_ci_high * 1000.0,
-        "query_full_scan_mean_ms": full_scan_mean * 1000.0,
-        "query_full_scan_ci95_low_ms": full_scan_ci_low * 1000.0,
-        "query_full_scan_ci95_high_ms": full_scan_ci_high * 1000.0,
-        "query_speedup": full_scan_mean / pushdown_mean if pushdown_mean else 0.0,
+        "full_scan_row_count": timing_metrics["full_scan"]["row_count"],
+        "query": sql,
+        **timing_metrics,
     }
 
 
@@ -242,7 +204,7 @@ def _print_granularity_block(*, index: int, total: int, entry: dict[str, Any]) -
     print()
     print("Timing")
     box = render_box_table(
-        ["Engine", "Mean latency", "95% confidence interval"],
+        ["Engine", "Mean latency", "Approx. normal interval (raw mean)"],
         [
             [
                 "Full scan",
@@ -261,13 +223,37 @@ def _print_granularity_block(*, index: int, total: int, entry: dict[str, Any]) -
     for line in box.splitlines():
         print(f"  {line}")
     print()
-    print(console.field_block([("Speedup", format_x(entry["query_speedup"]))]))
+    print(
+        console.field_block(
+            [
+                ("Row-wise full scan / pushdown", format_x(entry["query_speedup"])),
+                (
+                    "Vectorized full scan / pushdown",
+                    format_x(entry["vectorized_full_scan_speedup"]),
+                ),
+            ]
+        )
+    )
 
 
 def main() -> int:
     # Silent, like the rest of the suite: every granularity is fully
     # computed (quiet=True inside run_granularity_point) before anything
     # prints.
+    manifest = create_manifest(
+        parameters={
+            "benchmark": "chunk_granularity_sweep",
+            "num_symbols": NUM_SYMBOLS,
+            "rows_per_symbol": ROWS_PER_SYMBOL,
+            "granularities": [
+                {key: value for key, value in entry.items() if key != "boundary"}
+                for entry in GRANULARITIES
+            ],
+            "num_trials": QUERY_NUM_TRIALS,
+            "warmup": QUERY_WARMUP,
+            "synthetic_seed": 1,
+        }
+    )
     results = [run_granularity_point(granularity) for granularity in GRANULARITIES]
 
     results_dir = PROJECT_ROOT / "benchmarks" / "results"
@@ -284,7 +270,7 @@ def main() -> int:
         "hardware": hardware_snapshot(),
         "points": results,
     }
-    output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    write_result(output_path, payload, manifest)
 
     print(console.pitdb_header(index=5, total=5, title="Chunk-Granularity Trade-Off"))
     print()
