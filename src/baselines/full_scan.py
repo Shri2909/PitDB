@@ -7,7 +7,7 @@ import time
 import pandas as pd
 
 from src.query.executor import QueryResult
-from src.query.predicate import _coerce_column_literal
+from src.query.predicate import _coerce_column_literal, validate_predicate_columns
 from src.query.pushdown import PushdownResult
 from src.query.sql_parser import extract_as_of, parse_where_clause
 from src.query.versioning import (
@@ -31,7 +31,12 @@ class FullScanQueryEngine:
 
         started = time.perf_counter()
         remaining_sql, as_of = extract_as_of(sql)
+        if as_of is not None:
+            as_of = self.store.align_as_of(as_of)
         predicate = parse_where_clause(remaining_sql)
+        validate_predicate_columns(
+            predicate, {"timestamp", "symbol", *self.store.value_columns}
+        )
 
         chunks = self.store.chunks
         # Same gate QueryExecutor uses: only decompress-and-resolve on
@@ -43,7 +48,11 @@ class FullScanQueryEngine:
         # of the store), chunks here is always the *whole* store, so this
         # condition is exactly self.store.has_corrections -- using the O(1)
         # property directly instead of re-deriving it via a scan.
-        needs_resolution = as_of is not None or self.store.has_corrections
+        needs_resolution = (
+            as_of is not None
+            or self.store.has_corrections
+            or self.store.has_base_duplicates
+        )
 
         if chunks and needs_resolution:
             # Resolve before filtering -- see QueryExecutor's identical
@@ -72,10 +81,13 @@ class FullScanQueryEngine:
             resolved = resolve_versions(combined).drop(
                 columns=[TRANSACTION_TIME_COLUMN]
             )
-            mask = resolved.apply(
-                lambda row: bool(predicate.evaluate_against_row(row)), axis=1
-            )
-            data = resolved[mask]
+            if resolved.empty:
+                data = resolved
+            else:
+                mask = resolved.apply(
+                    lambda row: bool(predicate.evaluate_against_row(row)), axis=1
+                )
+                data = resolved[mask]
         else:
             data = self.store.full_scan(predicate.evaluate_against_row)
 

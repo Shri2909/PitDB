@@ -9,9 +9,10 @@ import numpy as np
 import pandas as pd
 
 from src.store.label import ChunkLabel
+from src.store.validation import RESERVED_VALUE_COLUMNS, timestamp_value
 
 
-@dataclass
+@dataclass(frozen=True)
 class Chunk:
     """One independently queryable group of raw, column-oriented rows.
 
@@ -22,10 +23,10 @@ class Chunk:
 
     label: ChunkLabel
     column_data: bytes
-    column_byte_lengths: list[int]
+    column_byte_lengths: tuple[int, ...] | list[int]
     num_columns: int
-    column_names: list[str]
-    timestamps: list[datetime]
+    column_names: tuple[str, ...] | list[str]
+    timestamps: tuple[datetime, ...] | list[datetime]
     # None for a base chunk (transaction time is derived from each row's own
     # timestamp -- see src/query/versioning.py). A list, positionally aligned
     # with `timestamps` and the same length, for a correction chunk (single
@@ -33,16 +34,25 @@ class Chunk:
     # corrections holds rows learned at different transaction times, so a
     # single per-chunk scalar can no longer answer "when was this row
     # learned" -- only a per-row list can.
-    correction_transaction_times: list[datetime] | None = None
+    correction_transaction_times: tuple[datetime, ...] | list[datetime] | None = None
 
     def __post_init__(self) -> None:
-        # Detach mutable framing lists from their caller. Chunk itself remains a
-        # mutable dataclass, so decompress() validates again before trusting it.
-        self.column_byte_lengths = list(self.column_byte_lengths)
-        self.column_names = list(self.column_names)
-        self.timestamps = list(self.timestamps)
+        # Finalized payload and framing cannot drift away from their zone map.
+        # Accept sequence inputs, detach them, and publish immutable tuples.
+        object.__setattr__(self, "column_byte_lengths", tuple(self.column_byte_lengths))
+        object.__setattr__(self, "column_names", tuple(self.column_names))
+        object.__setattr__(
+            self, "timestamps", tuple(timestamp_value(t) for t in self.timestamps)
+        )
         if self.correction_transaction_times is not None:
-            self.correction_transaction_times = list(self.correction_transaction_times)
+            object.__setattr__(
+                self,
+                "correction_transaction_times",
+                tuple(
+                    timestamp_value(t, name="transaction_time")
+                    for t in self.correction_transaction_times
+                ),
+            )
         self._validate_structure()
 
     def _validate_structure(self) -> None:
@@ -64,12 +74,18 @@ class Chunk:
             raise ValueError("column_names must be unique")
         if any(not isinstance(name, str) or not name for name in self.column_names):
             raise ValueError("every column name must be a non-empty string")
+        if RESERVED_VALUE_COLUMNS.intersection(self.column_names):
+            raise ValueError("numeric column names must not use reserved engine names")
 
         for byte_length in self.column_byte_lengths:
             if not isinstance(byte_length, int) or isinstance(byte_length, bool):
                 raise TypeError("column byte lengths must be integers")
             if byte_length < 0:
                 raise ValueError("column byte lengths must be non-negative")
+            if byte_length % 8:
+                raise ValueError(
+                    "column byte lengths must contain complete float64 values"
+                )
 
         framed_size = sum(self.column_byte_lengths)
         if framed_size != len(self.column_data):
@@ -132,7 +148,7 @@ class Chunk:
         offset = 0
 
         for column_name, byte_length in zip(
-            self.column_names, self.column_byte_lengths, strict=True
+            self.column_names, self.column_byte_lengths
         ):
             end = offset + byte_length
             # np.frombuffer returns a read-only view into the immutable bytes

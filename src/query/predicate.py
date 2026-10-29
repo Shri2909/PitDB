@@ -11,6 +11,7 @@ import pandas as pd
 
 from src.query.schema import ALIAS_MAP, COLUMN_LABEL_MAP, SCHEMA
 from src.store.label import ChunkLabel
+from src.store.validation import align_timestamp, timestamp_value
 
 _COMPARISON_OPERATORS = frozenset({"=", "<", ">", "<=", ">="})
 
@@ -32,15 +33,10 @@ def _coerce_column_literal(column: pd.Series, literal: Any) -> Any:
     """
 
     if isinstance(literal, datetime):
-        column_tz = getattr(column.dt, "tz", None)
-        literal_is_aware = literal.utcoffset() is not None
-        if column_tz is not None and not literal_is_aware:
-            # SQL literals without an offset are interpreted in the stored
-            # timestamp's timezone, matching _coerce_row_operands.
-            literal = literal.replace(tzinfo=column_tz)
-        elif literal_is_aware and column_tz is None:
-            literal = literal.replace(tzinfo=None)
-        return pd.Timestamp(literal)
+        literal = timestamp_value(literal, name="datetime literal")
+        if column.empty:
+            return literal
+        return align_timestamp(column.iloc[0], literal)
 
     if isinstance(literal, float):
         return literal
@@ -71,21 +67,8 @@ def _coerce_row_operands(row_value: Any, literal: Any) -> tuple[Any, Any]:
     """Align supported scalar representations before exact comparison."""
 
     if isinstance(literal, datetime) and isinstance(row_value, datetime):
-        # pandas.Timestamp is a datetime subclass. Converting when available
-        # keeps comparisons independent of pandas while preserving timezone.
-        to_python = getattr(row_value, "to_pydatetime", None)
-        if callable(to_python):
-            row_value = to_python()
-
-        row_is_aware = row_value.utcoffset() is not None
-        literal_is_aware = literal.utcoffset() is not None
-        if row_is_aware and not literal_is_aware:
-            # SQL literals without an offset are interpreted in the stored
-            # timestamp's timezone. Loader-normalized data normally uses UTC.
-            literal = literal.replace(tzinfo=row_value.tzinfo)
-        elif literal_is_aware and not row_is_aware:
-            row_value = row_value.replace(tzinfo=literal.tzinfo)
-        return row_value, literal
+        row_value = timestamp_value(row_value)
+        return row_value, align_timestamp(row_value, literal)
 
     if isinstance(literal, float):
         try:
@@ -110,13 +93,7 @@ def _align_literal_to_reference(reference: datetime, literal: datetime) -> datet
     directions.
     """
 
-    reference_is_aware = reference.utcoffset() is not None
-    literal_is_aware = literal.utcoffset() is not None
-    if reference_is_aware and not literal_is_aware:
-        return literal.replace(tzinfo=reference.tzinfo)
-    if literal_is_aware and not reference_is_aware:
-        return literal.replace(tzinfo=None)
-    return literal
+    return align_timestamp(reference, literal)
 
 
 def label_visible_as_of(label: ChunkLabel, as_of: datetime) -> bool:
@@ -333,6 +310,16 @@ class AlwaysTrue(PredicateNode):
         return pd.Series(True, index=df.index)
 
 
+def validate_predicate_columns(predicate: PredicateNode, columns: set[str]) -> None:
+    """Reject references absent from the physical schema before pruning."""
+
+    if isinstance(predicate, And):
+        for child in predicate.children:
+            validate_predicate_columns(child, columns)
+    elif isinstance(predicate, (Comparison, In)) and predicate.column not in columns:
+        raise ValueError(f"column {predicate.column!r} is absent from the store schema")
+
+
 __all__ = [
     "AlwaysTrue",
     "And",
@@ -340,4 +327,5 @@ __all__ = [
     "In",
     "PredicateNode",
     "label_visible_as_of",
+    "validate_predicate_columns",
 ]

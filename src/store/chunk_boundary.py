@@ -6,6 +6,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from src.store.validation import timestamp_value
+
 
 class ChunkBoundary(ABC):
     """Strategy for deciding when the current chunk should be finalized."""
@@ -37,10 +39,10 @@ class MonthlyBoundary(ChunkBoundary):
 
 @dataclass
 class DurationBoundary(ChunkBoundary):
-    """Use a fixed wall-clock duration per symbol.
+    """Use a fixed elapsed duration per symbol, including across DST changes.
 
     Appropriate for dense intraday inputs, such as one-minute data grouped into
-    hourly chunks, where each window contains enough adjacent values to compress.
+    hourly chunks, where each window contains adjacent values.
     """
 
     duration: timedelta
@@ -52,7 +54,18 @@ class DurationBoundary(ChunkBoundary):
             raise ValueError("duration must be greater than zero")
 
     def crosses(self, time_start: datetime, current_timestamp: datetime) -> bool:
-        return (current_timestamp - time_start) >= self.duration
+        start = timestamp_value(time_start)
+        current = timestamp_value(current_timestamp)
+        if (start.tzinfo is None) != (current.tzinfo is None):
+            raise TypeError("boundary timestamps must have matching timezone awareness")
+        # Each timestamp fits int64 nanoseconds, but their difference may not.
+        # Python integer arithmetic also supports timedelta.max boundaries.
+        duration_ns = (
+            (self.duration.days * 86400 + self.duration.seconds) * 1_000_000_000
+            + self.duration.microseconds * 1000
+            + getattr(self.duration, "nanoseconds", 0)
+        )
+        return current.value - start.value >= duration_ns
 
 
 __all__ = ["ChunkBoundary", "MonthlyBoundary", "DurationBoundary"]

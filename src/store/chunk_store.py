@@ -15,10 +15,16 @@ from src.store.chunk import Chunk
 from src.store.chunk_boundary import ChunkBoundary, MonthlyBoundary
 from src.store.chunk_builder import DEFAULT_VALUE_COLUMNS, ChunkBuilder
 from src.store.label import ChunkLabel
+from src.store.validation import (
+    align_timestamp,
+    canonical_timestamp,
+    timestamp_value,
+    validate_value_columns,
+)
 
 
 class ChunkStore:
-    """Manage per-symbol builders and finalized compressed chunks."""
+    """Manage per-symbol builders and finalized raw column chunks."""
 
     def __init__(
         self,
@@ -28,19 +34,7 @@ class ChunkStore:
         if not callable(getattr(chunk_boundary, "crosses", None)):
             raise TypeError("chunk_boundary must provide a crosses() method")
 
-        selected = (
-            list(DEFAULT_VALUE_COLUMNS)
-            if value_columns is None
-            else list(value_columns)
-        )
-        if not selected:
-            raise ValueError("value_columns must not be empty")
-        if any(not isinstance(column, str) or not column for column in selected):
-            raise ValueError("every value column must be a non-empty string")
-        if len(selected) != len(set(selected)):
-            raise ValueError("value_columns must not contain duplicates")
-        if "close" not in selected:
-            raise ValueError("value_columns must include 'close' for price labels")
+        selected = validate_value_columns(value_columns, default=DEFAULT_VALUE_COLUMNS)
 
         self.chunk_boundary = chunk_boundary
         self.value_columns = selected
@@ -63,6 +57,8 @@ class ChunkStore:
         self._as_of_labels: list[ChunkLabel] = []
         self._correction_chunk_count = 0
         self._last_valid_timestamp: dict[str, datetime] = {}
+        self._time_reference: pd.Timestamp | None = None
+        self._has_base_duplicates = False
 
     def _chunk_ids(self) -> Iterator[int]:
         """Yield one globally unique, monotonically increasing chunk ID."""
@@ -75,8 +71,11 @@ class ChunkStore:
     def ingest_row(self, timestamp: datetime, symbol: str, values: np.ndarray) -> None:
         """Route one sequential row to its symbol's active builder."""
 
-        if not isinstance(symbol, str) or not symbol:
+        if not isinstance(symbol, str) or not symbol.strip():
             raise ValueError("symbol must be a non-empty string")
+
+        timestamp = canonical_timestamp(timestamp, self._time_reference)
+        last_timestamp = self._last_valid_timestamp.get(symbol)
 
         builder = self._builders.get(symbol)
         if builder is None:
@@ -85,7 +84,6 @@ class ChunkStore:
             # only compares against its own _time_end) can't catch an
             # out-of-order row resuming after a flush_all(). Check against
             # the last timestamp this symbol ever successfully ingested.
-            last_timestamp = self._last_valid_timestamp.get(symbol)
             if last_timestamp is not None:
                 try:
                     out_of_order = timestamp < last_timestamp
@@ -107,12 +105,15 @@ class ChunkStore:
                 value_columns=self.value_columns,
                 chunk_id_counter=self._chunk_id_source,
             )
-            self._builders[symbol] = builder
-
-        completed = builder.add_row(timestamp, values)
-        if completed is not None:
-            self._add_chunk(completed)
+        # Publish the old window before the builder discards its buffer.
+        # A failed index/publication leaves accepted rows available for retry.
+        builder.add_row(timestamp, values, publish=self._add_chunk)
+        self._builders[symbol] = builder
+        if last_timestamp is not None and timestamp == last_timestamp:
+            self._has_base_duplicates = True
         self._last_valid_timestamp[symbol] = timestamp
+        if self._time_reference is None:
+            self._time_reference = timestamp
 
     def ingest_correction(
         self,
@@ -135,10 +136,14 @@ class ChunkStore:
         learned before the event itself happened.
         """
 
-        if not isinstance(symbol, str) or not symbol:
+        if not isinstance(symbol, str) or not symbol.strip():
             raise ValueError("symbol must be a non-empty string")
-        if not isinstance(transaction_time, datetime):
-            raise TypeError("transaction_time must be a datetime instance")
+        timestamp = canonical_timestamp(timestamp, self._time_reference)
+        transaction_time = canonical_timestamp(
+            transaction_time,
+            self._time_reference if self._time_reference is not None else timestamp,
+            name="transaction_time",
+        )
 
         try:
             precedes_event = transaction_time < timestamp
@@ -175,6 +180,8 @@ class ChunkStore:
                 correction_transaction_times=[transaction_time],
             )
         )
+        if self._time_reference is None:
+            self._time_reference = timestamp
 
     def compact_corrections(
         self, symbol: str | None = None, boundary: ChunkBoundary | None = None
@@ -218,7 +225,7 @@ class ChunkStore:
                 continue
             groups.setdefault(chunk.label.symbol, []).append(chunk)
 
-        removed = 0
+        replacements: list[tuple[set[int], list[Chunk]]] = []
         for group_symbol, chunks in groups.items():
             if len(chunks) < 2:
                 continue
@@ -274,13 +281,47 @@ class ChunkStore:
                     self._label_as_correction(tail, pending_transaction_times)
                 )
 
-            self._remove_chunks({chunk.label.chunk_id for chunk in chunks})
-            removed += len(chunks)
-            for merged_chunk in merged_chunks:
-                self._add_chunk(merged_chunk)
-                removed -= 1
+            if len(merged_chunks) < len(chunks):
+                replacements.append(
+                    ({chunk.label.chunk_id for chunk in chunks}, merged_chunks)
+                )
 
-        return removed
+        if not replacements:
+            return 0
+        # Prepare every symbol before changing membership, then operate on
+        # private container copies. Publication failure restores the complete
+        # previous state, including earlier symbol groups in the same call.
+        previous = (
+            self._chunks,
+            self._chunk_by_id,
+            self._as_of_keys,
+            self._as_of_labels,
+            self._correction_chunk_count,
+        )
+        working = (
+            list(self._chunks),
+            dict(self._chunk_by_id),
+            list(self._as_of_keys),
+            list(self._as_of_labels),
+        )
+        try:
+            self._chunks, self._chunk_by_id, self._as_of_keys, self._as_of_labels = (
+                working
+            )
+            for old_ids, merged_chunks in replacements:
+                self._remove_chunks(old_ids)
+                for merged_chunk in merged_chunks:
+                    self._add_chunk(merged_chunk)
+        except BaseException:
+            (
+                self._chunks,
+                self._chunk_by_id,
+                self._as_of_keys,
+                self._as_of_labels,
+                self._correction_chunk_count,
+            ) = previous
+            raise
+        return sum(len(old_ids) - len(merged) for old_ids, merged in replacements)
 
     @staticmethod
     def _label_as_correction(chunk: Chunk, transaction_times: list[datetime]) -> Chunk:
@@ -328,7 +369,9 @@ class ChunkStore:
         # can't unsort it) without needing a bisect lookup per removed key.
         kept_keys: list[datetime] = []
         kept_labels: list[ChunkLabel] = []
-        for key, label in zip(self._as_of_keys, self._as_of_labels, strict=True):
+        if len(self._as_of_keys) != len(self._as_of_labels):
+            raise RuntimeError("AS OF index keys and labels are misaligned")
+        for key, label in zip(self._as_of_keys, self._as_of_labels):
             if label.chunk_id not in chunk_ids:
                 kept_keys.append(key)
                 kept_labels.append(label)
@@ -349,8 +392,8 @@ class ChunkStore:
 
         for symbol in list(self._builders.keys()):
             builder = self._builders[symbol]
-            completed = builder.flush()
-            if completed is not None:
+            if builder._row_count:
+                completed = builder.finalize()
                 self._add_chunk(completed)
             del self._builders[symbol]
 
@@ -383,9 +426,11 @@ class ChunkStore:
         method had already mutated other store state in the old ordering.
         """
 
-        if not self._as_of_keys:
+        key = timestamp_value(key, name="AS OF index key")
+        reference = self._as_of_keys[0] if self._as_of_keys else self._time_reference
+        if reference is None:
             return
-        existing_is_aware = self._as_of_keys[0].utcoffset() is not None
+        existing_is_aware = reference.utcoffset() is not None
         new_is_aware = key.utcoffset() is not None
         if existing_is_aware != new_is_aware:
             new_kind = "timezone-aware" if new_is_aware else "naive"
@@ -415,14 +460,32 @@ class ChunkStore:
         to be AS-OF-irrelevant.
         """
 
+        as_of = self.align_as_of(as_of)
         cut = bisect.bisect_right(self._as_of_keys, as_of)
         return self._as_of_labels[:cut]
 
     def labels_not_visible_as_of(self, as_of: datetime) -> list[ChunkLabel]:
         """The complement of ``labels_visible_as_of`` -- also O(log n) + slice."""
 
+        as_of = self.align_as_of(as_of)
         cut = bisect.bisect_right(self._as_of_keys, as_of)
         return self._as_of_labels[cut:]
+
+    def align_as_of(self, as_of: datetime) -> pd.Timestamp:
+        """Use the same timezone policy for indexed and exact AS OF checks."""
+        reference = self._time_reference
+        if reference is None and self._as_of_keys:
+            reference = self._as_of_keys[0]
+        return (
+            timestamp_value(as_of, name="AS OF cutoff")
+            if reference is None
+            else align_timestamp(reference, as_of)
+        )
+
+    @property
+    def has_base_duplicates(self) -> bool:
+        """Whether accepted base keys require last-ingested version resolution."""
+        return self._has_base_duplicates
 
     def ingest_dataframe(self, df: pd.DataFrame) -> None:
         """Ingest a DataFrame through the same sequential replay contract."""
@@ -490,6 +553,18 @@ class ChunkStore:
         except KeyError:
             raise KeyError(f"chunk ID not found: {chunk_id}") from None
 
+    def empty_frame(self) -> pd.DataFrame:
+        """Return the same public schema/dtypes when no chunk is selected."""
+        timezone = None if self._time_reference is None else self._time_reference.tz
+        data = {
+            "timestamp": pd.Series(pd.DatetimeIndex([], tz=timezone)),
+            "symbol": pd.Series([], dtype=object),
+        }
+        data.update(
+            {name: pd.Series([], dtype=np.float64) for name in self.value_columns}
+        )
+        return pd.DataFrame(data)
+
     def full_scan(
         self,
         predicate_fn: Callable[[pd.Series], bool] | None = None,
@@ -500,7 +575,7 @@ class ChunkStore:
             raise TypeError("predicate_fn must be callable or None")
 
         if not self._chunks:
-            return pd.DataFrame(columns=["timestamp", "symbol", *self.value_columns])
+            return self.empty_frame()
 
         # Decompress before filtering: this is intentionally the naive
         # full-scan baseline, with no label pruning or skipped chunks.

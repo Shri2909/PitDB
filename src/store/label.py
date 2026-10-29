@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from src.store.validation import timestamp_value
+
 _SUPPORTED_OPERATORS = frozenset({"=", ">", ">=", "<", "<="})
 
 
@@ -23,7 +25,7 @@ def _require_operator(op: str) -> None:
 
 @dataclass(frozen=True)
 class ChunkLabel:
-    """Small, immutable summary attached to one compressed chunk."""
+    """Small, immutable summary attached to one raw column chunk."""
 
     symbol: str
     time_start: datetime
@@ -43,6 +45,37 @@ class ChunkLabel:
     # min/max across the rows it actually contains.
     transaction_time_start: datetime | None = None
     transaction_time_end: datetime | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.symbol, str) or not self.symbol.strip():
+            raise ValueError("symbol must be a non-empty string")
+        for field in ("row_count", "chunk_id"):
+            value = getattr(self, field)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"{field} must be a non-negative integer")
+        for field in ("time_start", "time_end"):
+            object.__setattr__(
+                self, field, timestamp_value(getattr(self, field), name=field)
+            )
+        try:
+            if self.time_end < self.time_start:
+                raise ValueError("time_end must not precede time_start")
+        except TypeError as exc:
+            raise ValueError("time range timezone awareness must match") from exc
+        if (self.transaction_time_start is None) != (self.transaction_time_end is None):
+            raise ValueError("both transaction-time bounds must be set together")
+        if self.transaction_time_start is not None:
+            for field in ("transaction_time_start", "transaction_time_end"):
+                object.__setattr__(
+                    self, field, timestamp_value(getattr(self, field), name=field)
+                )
+            try:
+                if self.transaction_time_end < self.transaction_time_start:
+                    raise ValueError("transaction-time range must be ordered")
+            except TypeError as exc:
+                raise ValueError(
+                    "transaction-time timezone awareness must match"
+                ) from exc
 
     def can_contain_symbol(self, symbol: str) -> bool:
         return self.symbol == symbol

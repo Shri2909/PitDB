@@ -71,7 +71,7 @@ def resolve_versions(
     """
 
     if df.empty:
-        return df
+        return df.drop(columns=[_IS_CORRECTION_COLUMN], errors="ignore")
 
     # groupby(["symbol", "timestamp"]) below partitions by key regardless of
     # the frame's physical row order -- only txn_col (and the tie-break)

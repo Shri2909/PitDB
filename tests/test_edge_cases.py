@@ -148,7 +148,7 @@ def test_single_row_chunk() -> None:
     assert chunk.label.row_count == 1
     assert chunk.label.time_start == chunk.label.time_end == timestamp
     # Each independent float64 column contains only its raw 64-bit first value.
-    assert chunk.column_byte_lengths == [8] * len(VALUE_COLUMNS)
+    assert chunk.column_byte_lengths == (8,) * len(VALUE_COLUMNS)
     assert len(chunk.column_data) == 8 * len(VALUE_COLUMNS)
     pd.testing.assert_frame_equal(
         chunk.decompress(), frame, check_exact=True, check_dtype=True

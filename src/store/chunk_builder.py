@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import datetime
 from itertools import count
 
@@ -12,6 +12,7 @@ import numpy as np
 from src.store.chunk import Chunk
 from src.store.chunk_boundary import ChunkBoundary, MonthlyBoundary
 from src.store.label import ChunkLabel
+from src.store.validation import timestamp_value, validate_value_columns
 
 DEFAULT_VALUE_COLUMNS = ("open", "high", "low", "close", "volume")
 
@@ -26,24 +27,12 @@ class ChunkBuilder:
         value_columns: list[str] | None = None,
         chunk_id_counter: Iterator[int] | None = None,
     ) -> None:
-        if not isinstance(symbol, str) or not symbol:
+        if not isinstance(symbol, str) or not symbol.strip():
             raise ValueError("symbol must be a non-empty string")
         if not callable(getattr(chunk_boundary, "crosses", None)):
             raise TypeError("chunk_boundary must provide a crosses() method")
 
-        selected = (
-            list(DEFAULT_VALUE_COLUMNS)
-            if value_columns is None
-            else list(value_columns)
-        )
-        if not selected:
-            raise ValueError("value_columns must not be empty")
-        if any(not isinstance(column, str) or not column for column in selected):
-            raise ValueError("every value column must be a non-empty string")
-        if len(selected) != len(set(selected)):
-            raise ValueError("value_columns must not contain duplicates")
-        if "close" not in selected:
-            raise ValueError("value_columns must include 'close' for price labels")
+        selected = validate_value_columns(value_columns, default=DEFAULT_VALUE_COLUMNS)
 
         self.symbol = symbol
         self.chunk_boundary = chunk_boundary
@@ -68,8 +57,7 @@ class ChunkBuilder:
         self._raw_values = {column: [] for column in self.value_columns}
 
     def _validate_row(self, timestamp: datetime, values: np.ndarray) -> None:
-        if not isinstance(timestamp, datetime):
-            raise TypeError("timestamp must be a datetime instance")
+        timestamp = timestamp_value(timestamp)
         if not isinstance(values, np.ndarray):
             raise TypeError("values must be a NumPy array")
         if values.ndim != 1:
@@ -82,7 +70,7 @@ class ChunkBuilder:
             )
         if self._time_end is not None:
             try:
-                out_of_order = timestamp < self._time_end
+                out_of_order = timestamp < timestamp_value(self._time_end)
             except TypeError as exc:
                 raise ValueError(
                     "timestamp timezone awareness must match the current chunk"
@@ -109,9 +97,16 @@ class ChunkBuilder:
         self._timestamps.append(timestamp)
         self._row_count += 1
 
-    def add_row(self, timestamp: datetime, values: np.ndarray) -> Chunk | None:
+    def add_row(
+        self,
+        timestamp: datetime,
+        values: np.ndarray,
+        *,
+        publish: Callable[[Chunk], None] | None = None,
+    ) -> Chunk | None:
         """Consume one row and return the previous chunk on a boundary crossing."""
 
+        timestamp = timestamp_value(timestamp)
         self._validate_row(timestamp, values)
         if self._time_start is None:
             self._start_window(timestamp)
@@ -119,6 +114,8 @@ class ChunkBuilder:
         assert self._time_start is not None
         if self.chunk_boundary.crosses(self._time_start, timestamp):
             completed = self.finalize()
+            if publish is not None:
+                publish(completed)
             self._reset_accumulators()
             self._start_window(timestamp)
             self._append_row(timestamp, values)

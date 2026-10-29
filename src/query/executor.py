@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from src.query.predicate import _coerce_column_literal
+from src.query.predicate import _coerce_column_literal, validate_predicate_columns
 from src.query.pushdown import PushdownResult, evaluate_pushdown
 from src.query.sql_parser import extract_as_of, parse_where_clause
 from src.query.versioning import (
@@ -32,10 +32,13 @@ class QueryResult:
 class QueryExecutor:
     """Parse, prune, decompress candidates, and apply an exact row filter."""
 
-    def __init__(self, store: ChunkStore) -> None:
+    def __init__(self, store: ChunkStore, *, enable_pruning: bool = True) -> None:
         if not isinstance(store, ChunkStore):
             raise TypeError("store must be a ChunkStore")
         self.store = store
+        if not isinstance(enable_pruning, bool):
+            raise TypeError("enable_pruning must be a bool")
+        self.enable_pruning = enable_pruning
 
     def execute(self, sql: str) -> QueryResult:
         """Execute the supported SQL subset against finalized store chunks."""
@@ -43,12 +46,28 @@ class QueryExecutor:
         started = time.perf_counter()
         remaining_sql, as_of = extract_as_of(sql)
         predicate = parse_where_clause(remaining_sql)
-        pushdown_result = evaluate_pushdown(
-            predicate,
-            self.store.labels,
-            as_of=as_of,
-            as_of_index=self.store,
-            price_pruning_enabled=not self.store.has_corrections,
+        validate_predicate_columns(
+            predicate, {"timestamp", "symbol", *self.store.value_columns}
+        )
+        if as_of is not None:
+            as_of = self.store.align_as_of(as_of)
+        versioned = self.store.has_corrections or self.store.has_base_duplicates
+        pushdown_result = (
+            evaluate_pushdown(
+                predicate,
+                self.store.labels,
+                as_of=as_of,
+                as_of_index=self.store,
+                price_pruning_enabled=not versioned,
+            )
+            if self.enable_pruning
+            else PushdownResult(
+                candidate_chunk_ids=[label.chunk_id for label in self.store.labels],
+                skipped_chunk_ids=[],
+                total_chunks=self.store.total_chunks,
+                chunks_skipped_ratio=0.0,
+                candidate_count=self.store.total_chunks,
+            )
         )
 
         # Exact row evaluation runs predicate.evaluate_vectorized, which
@@ -72,9 +91,7 @@ class QueryExecutor:
         # explicit AS OF cutoff, or at least one correction chunk among the
         # candidates. Every existing query -- no AS OF, no corrections ever
         # ingested -- takes the exact prior code path, byte-for-byte.
-        needs_resolution = as_of is not None or any(
-            chunk.label.transaction_time_start is not None for chunk in chunks
-        )
+        needs_resolution = as_of is not None or versioned
 
         if chunks and needs_resolution:
             # Resolve each (symbol, timestamp) to its current/AS-OF-visible
@@ -103,7 +120,11 @@ class QueryExecutor:
             resolved = resolve_versions(combined).drop(
                 columns=[TRANSACTION_TIME_COLUMN]
             )
-            data = resolved[predicate.evaluate_vectorized(resolved)]
+            data = (
+                resolved
+                if resolved.empty
+                else resolved[predicate.evaluate_vectorized(resolved)]
+            )
         elif chunks:
             combined = pd.concat(
                 [chunk.decompress() for chunk in chunks], ignore_index=True
@@ -127,9 +148,7 @@ class QueryExecutor:
                 data = data.sort_values(["timestamp", "symbol"], kind="stable")
         else:
             # Do not decompress a skipped chunk merely to discover the schema.
-            data = pd.DataFrame(
-                columns=["timestamp", "symbol", *self.store.value_columns]
-            )
+            data = self.store.empty_frame()
 
         data = data.reset_index(drop=True)
 
