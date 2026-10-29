@@ -11,6 +11,8 @@ import re
 from datetime import datetime
 from enum import Enum
 
+import pandas as pd
+
 
 class ColumnType(Enum):
     STRING = "string"
@@ -90,27 +92,33 @@ def validate_column(name: str) -> str:
     return canonical
 
 
-def is_date_only(value: str) -> bool:
+def is_date_only(value: str, *, decoded: bool = False) -> bool:
     """Return whether a SQL literal has exactly ``YYYY-MM-DD`` syntax.
 
-    Quotes and surrounding whitespace are ignored. This syntactic flag is kept
-    separate from :func:`parse_literal` so that function can retain its required
-    ``datetime | float | str`` return contract. The SQL parser uses the flag to
-    expand date equality into the appropriate whole-day interval.
+    Quotes and surrounding whitespace are ignored for raw SQL text. With
+    ``decoded=True``, inspect the already-decoded AST content exactly. This
+    syntactic flag is separate from :func:`parse_literal`; the parser uses it
+    to expand date equality into the appropriate whole-day interval.
     """
 
     if not isinstance(value, str):
         raise TypeError("date literal must be a string")
-    return _DATE_ONLY_PATTERN.fullmatch(_unquote_sql_literal(value)) is not None
+    literal = value if decoded else _unquote_sql_literal(value)
+    return _DATE_ONLY_PATTERN.fullmatch(literal) is not None
 
 
-def parse_literal(value: str, column: str) -> datetime | float | str:
+def parse_literal(
+    value: str, column: str, *, decoded: bool = False
+) -> datetime | float | str:
     """Convert a SQL literal according to an already-canonical column.
 
     ``column`` is intentionally not passed through :func:`validate_column`:
     accepting an alias here would allow deferred alias resolution to creep into
     execution. Callers must canonicalize once, at parse time, before invoking
     this function.
+
+    ``decoded=True`` is for AST/token values whose SQL quoting has already been
+    removed. Preserve their contents exactly instead of unquoting a second time.
     """
 
     if not isinstance(value, str):
@@ -118,7 +126,7 @@ def parse_literal(value: str, column: str) -> datetime | float | str:
     if not isinstance(column, str) or column not in SCHEMA:
         raise ValueError(f"literal column must be canonical; received {column!r}")
 
-    literal = _unquote_sql_literal(value)
+    literal = value if decoded else _unquote_sql_literal(value)
     column_type = SCHEMA[column]
 
     if column_type is ColumnType.STRING:
@@ -129,8 +137,11 @@ def parse_literal(value: str, column: str) -> datetime | float | str:
         # the common SQL/ISO UTC suffix explicitly for portable behavior.
         normalized = literal[:-1] + "+00:00" if literal.endswith("Z") else literal
         try:
-            return datetime.fromisoformat(normalized)
-        except ValueError as exc:
+            # Validate ISO syntax, then retain nanoseconds rather than
+            # truncating a supported literal to Python's microseconds.
+            datetime.fromisoformat(normalized)
+            return pd.Timestamp(normalized).as_unit("ns")
+        except (TypeError, ValueError, OverflowError) as exc:
             raise ValueError(
                 f"invalid datetime literal {value!r} for column {column!r}"
             ) from exc

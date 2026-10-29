@@ -302,9 +302,10 @@ def test_extract_as_of_ignores_the_phrase_inside_an_alias() -> None:
 
     assert as_of is None
     assert remaining_sql == sql
-    predicate = parse_where_clause(remaining_sql)
-    assert isinstance(predicate, Comparison)
-    assert predicate.column == "symbol"
+    # Extraction preserves text independently of the supported projection
+    # grammar. Execution must reject this unimplemented projection explicitly.
+    with pytest.raises(UnsupportedQueryError, match="SELECT \\*"):
+        parse_where_clause(remaining_sql)
 
 
 def test_extract_as_of_ordinary_timestamp_column_reference_is_unaffected() -> None:

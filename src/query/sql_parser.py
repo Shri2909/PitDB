@@ -33,18 +33,67 @@ _SWAPPED_OPERATOR = {
 }
 
 _AS_OF_TOKENIZER = Tokenizer()
+_MAX_SQL_CHARACTERS = 65_536
+_MAX_SQL_TOKENS = 8_192
+_MAX_PARENTHESIS_DEPTH = 32
+_MAX_CONJUNCTIONS = 255
+
+
+def _tokenize_bounded(sql: str) -> list[Token]:
+    """Apply lexical resource and single-statement limits before parsing."""
+
+    if not isinstance(sql, str):
+        raise UnsupportedQueryError("SQL must be a string")
+    if len(sql) > _MAX_SQL_CHARACTERS:
+        raise UnsupportedQueryError("SQL exceeds the 65536-character limit")
+    try:
+        tokens = _AS_OF_TOKENIZER.tokenize(sql)
+    except sqlglot.errors.SqlglotError as exc:
+        raise UnsupportedQueryError("Invalid SQL tokenization") from exc
+    if len(tokens) > _MAX_SQL_TOKENS:
+        raise UnsupportedQueryError("SQL exceeds the 8192-token limit")
+
+    depth = 0
+    conjunctions = 0
+    for index, token in enumerate(tokens):
+        if token.token_type == TokenType.SEMICOLON and index != len(tokens) - 1:
+            raise UnsupportedQueryError("Exactly one SQL statement is supported")
+        if token.token_type == TokenType.L_PAREN:
+            depth += 1
+            if depth > _MAX_PARENTHESIS_DEPTH:
+                raise UnsupportedQueryError("SQL exceeds the 32-level nesting limit")
+        elif token.token_type == TokenType.R_PAREN:
+            depth -= 1
+            if depth < 0:
+                raise UnsupportedQueryError("Unbalanced SQL parentheses")
+        elif token.token_type == TokenType.AND:
+            conjunctions += 1
+            if conjunctions > _MAX_CONJUNCTIONS:
+                raise UnsupportedQueryError("SQL exceeds the 256-predicate limit")
+    if depth:
+        raise UnsupportedQueryError("Unbalanced SQL parentheses")
+    return tokens
 
 
 def parse_where_clause(sql: str) -> PredicateNode:
     """Parse a complete SQL statement into a conservative predicate tree."""
 
-    parsed = sqlglot.parse_one(sql)
-    _validate_statement_scope(parsed)
+    _tokenize_bounded(sql)
+    try:
+        statements = sqlglot.parse(sql)
+        if len(statements) != 1 or statements[0] is None:
+            raise UnsupportedQueryError("Exactly one SELECT statement is required")
+        parsed = statements[0]
+        _validate_statement_scope(parsed)
 
-    where_clause = parsed.find(exp.Where)
-    if where_clause is None:
-        return AlwaysTrue()
-    return _convert_expression(where_clause.this)
+        where_clause = parsed.args.get("where")
+        if where_clause is None:
+            return AlwaysTrue()
+        return _convert_expression(where_clause.this)
+    except sqlglot.errors.SqlglotError as exc:
+        raise UnsupportedQueryError("Invalid or unsupported SQL syntax") from exc
+    except RecursionError as exc:
+        raise UnsupportedQueryError("SQL expression nesting is too deep") from exc
 
 
 def _is_of_token(token: Token) -> bool:
@@ -56,10 +105,9 @@ def _is_of_token(token: Token) -> bool:
 def extract_as_of(sql: str) -> tuple[str, datetime | None]:
     """Strip a ``TIMESTAMP AS OF '<literal>'`` clause, returning (sql, as_of).
 
-    This is the same syntax and placement Delta Lake and SQL Server use for
-    point-in-time queries (``FROM table TIMESTAMP AS OF ts`` / ``FOR
-    SYSTEM_TIME AS OF ts``): a modifier on the table reference, not a WHERE
-    predicate. That placement is exactly how this function locates it: it
+    This project's sole supported time-travel form is a modifier immediately
+    after ``FROM data``, rather than a WHERE predicate. That placement is how
+    this function locates it: it
     tokenizes the raw SQL (lexical analysis only -- never a full parse, and
     never a re-serialization through a different dialect) and looks at the
     single token immediately following the table name. Anywhere else, a bare
@@ -86,7 +134,7 @@ def extract_as_of(sql: str) -> tuple[str, datetime | None]:
     ``parse_where_clause``.
     """
 
-    tokens = _AS_OF_TOKENIZER.tokenize(sql)
+    tokens = _tokenize_bounded(sql)
 
     from_index = next(
         (i for i, token in enumerate(tokens) if token.token_type == TokenType.FROM),
@@ -113,7 +161,7 @@ def extract_as_of(sql: str) -> tuple[str, datetime | None]:
             raise UnsupportedQueryError("AS OF requires a literal timestamp")
 
         literal_token = tokens[literal_index]
-        as_of = parse_literal(f"'{literal_token.text}'", "timestamp")
+        as_of = parse_literal(literal_token.text, "timestamp", decoded=True)
         if not isinstance(as_of, datetime):
             raise UnsupportedQueryError("AS OF literal did not parse to a timestamp")
 
@@ -147,14 +195,73 @@ def _validate_statement_scope(parsed: exp.Expression) -> None:
     if parsed.find(exp.Join) is not None:
         raise UnsupportedQueryError("JOINs are not supported.")
 
-    select = parsed if isinstance(parsed, exp.Select) else parsed.find(exp.Select)
-    if select is not None:
-        for projection in select.expressions:
+    if isinstance(parsed, exp.Select):
+        for projection in parsed.expressions:
             if projection.find(exp.AggFunc) is not None:
                 raise UnsupportedQueryError(
                     "Aggregation functions are not supported; only "
                     "WHERE-clause filtering is executed."
                 )
+
+    if not isinstance(parsed, exp.Select):
+        raise UnsupportedQueryError("Only SELECT * FROM data is supported")
+    _reject_unused_arguments(parsed, {"expressions", "from", "from_", "where"})
+    if (
+        len(parsed.expressions) != 1
+        or not isinstance(parsed.expressions[0], exp.Star)
+        or any(parsed.expressions[0].args.values())
+    ):
+        raise UnsupportedQueryError(
+            "Only the unmodified SELECT * projection is supported"
+        )
+
+    source = parsed.args.get("from") or parsed.args.get("from_")
+    if not isinstance(source, exp.From):
+        raise UnsupportedQueryError("FROM data is required")
+    _reject_unused_arguments(source, {"this"})
+    table = source.this
+    if (
+        not isinstance(table, exp.Table)
+        or not isinstance(table.this, exp.Identifier)
+        or table.name.lower() != "data"
+    ):
+        raise UnsupportedQueryError("Only the data table is supported")
+    _reject_unused_arguments(table, {"this", "alias"})
+    qualifier = "data"
+    alias = table.args.get("alias")
+    if alias is not None:
+        if not isinstance(alias, exp.TableAlias) or not isinstance(
+            alias.this, exp.Identifier
+        ):
+            raise UnsupportedQueryError("Only a simple table alias is supported")
+        _reject_unused_arguments(alias, {"this"})
+        if not alias.name:
+            raise UnsupportedQueryError("Table aliases must not be empty")
+        qualifier = alias.name.lower()
+
+    for column in parsed.find_all(exp.Column):
+        _reject_unused_arguments(column, {"this", "table"})
+        if not isinstance(column.this, exp.Identifier):
+            raise UnsupportedQueryError("Expected a simple column name")
+        table_identifier = column.args.get("table")
+        if table_identifier is not None and (
+            not isinstance(table_identifier, exp.Identifier)
+            or not column.table
+            or column.table.lower() != qualifier
+        ):
+            raise UnsupportedQueryError(
+                "Column qualifier must match the data table alias"
+            )
+
+
+def _reject_unused_arguments(node: exp.Expression, allowed: set[str]) -> None:
+    """Reject every active AST field that the bounded executor does not use."""
+
+    for key, value in node.args.items():
+        if key not in allowed and value:
+            raise UnsupportedQueryError(
+                f"Unsupported {type(node).__name__} clause: {key}"
+            )
 
 
 def _convert_expression(node: exp.Expression) -> PredicateNode:
@@ -175,10 +282,14 @@ def _convert_expression(node: exp.Expression) -> PredicateNode:
         )
 
     if isinstance(node, exp.And):
-        left = _convert_expression(node.left)
-        right = _convert_expression(node.right)
         children: list[PredicateNode] = []
-        for child in (left, right):
+        pending = [node]
+        while pending:
+            current = _unwrap_parentheses(pending.pop())
+            if isinstance(current, exp.And):
+                pending.extend((current.right, current.left))
+                continue
+            child = _convert_expression(current)
             if isinstance(child, And):
                 children.extend(child.children)
             else:
@@ -201,6 +312,9 @@ def _convert_expression(node: exp.Expression) -> PredicateNode:
         # expressions. It was rejected above; this guard documents the shape.
         if node.args.get("query") is not None:
             raise UnsupportedQueryError("Subqueries are not supported.")
+        _reject_unused_arguments(node, {"this", "expressions"})
+        if not node.expressions:
+            raise UnsupportedQueryError("IN requires at least one literal")
 
         column = _extract_column(node.this)
         label_field = COLUMN_LABEL_MAP[column]
@@ -241,13 +355,19 @@ def _convert_comparison(node: exp.Expression, operator: str) -> PredicateNode:
             raise UnsupportedQueryError(
                 "date-only equality did not produce a datetime literal"
             )
+        try:
+            next_day = value + timedelta(days=1)
+        except (ValueError, OverflowError) as exc:
+            raise UnsupportedQueryError(
+                "Date equality exceeds the datetime range"
+            ) from exc
         return And(
             [
                 Comparison(column, ">=", value, label_field),
                 Comparison(
                     column,
                     "<",
-                    value + timedelta(days=1),
+                    next_day,
                     label_field,
                 ),
             ]
@@ -290,7 +410,7 @@ def _extract_column(node: exp.Expression) -> str:
         raise UnsupportedQueryError(
             f"expected a column reference, found {type(node).__name__}"
         )
-    # exp.Column.name deliberately omits any table/catalog qualifier.
+    # Qualifiers have already been validated against the sole FROM source.
     return validate_column(node.name)
 
 
@@ -313,12 +433,15 @@ def _literal_text(node: exp.Expression) -> str:
 def _extract_literal(node: exp.Expression, column: str) -> Any:
     """Parse a literal using the canonical column's declared schema type."""
 
-    return parse_literal(_literal_text(node), column)
+    try:
+        return parse_literal(_literal_text(node), column, decoded=True)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise UnsupportedQueryError(str(exc)) from exc
 
 
 def _literal_is_date_only(node: exp.Expression) -> bool:
     node = _unwrap_parentheses(node)
-    return isinstance(node, exp.Literal) and is_date_only(str(node.this))
+    return isinstance(node, exp.Literal) and is_date_only(str(node.this), decoded=True)
 
 
 __all__ = [
