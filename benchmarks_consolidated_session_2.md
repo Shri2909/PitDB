@@ -1,5 +1,19 @@
 # PitDB — Consolidated Benchmark Results
 
+> Historical artifact: this is the original July 2026 transcript for commit
+> `543cfda`, retained for reference. Its performance-validity labels, memory
+> reduction interpretation, and interval-based significance claims are not
+> current validation. The October 2026 remediation changes the engine and
+> measurement protocol. Use [BENCHMARK_RESULTS.md](BENCHMARK_RESULTS.md) and
+> [METHODOLOGY.md](METHODOLOGY.md) for current scope and interpretation.
+>
+> In particular, the transcript's "Packed storage uses 63.14% less memory"
+> line compared store numeric buffers with a whole pandas DataFrame and is
+> withdrawn (storage is uncompressed float64, so no reduction exists to
+> measure). Its RSS readings are at the measurement noise floor, and its
+> single-cutoff AS OF scenario was later replaced by a multi-cutoff sweep
+> (see METHODOLOGY.md).
+
 Generated: 2026-07-21T15:44:39+00:00
 Git commit: 543cfda
 Environment: tuned (performance governor, turbo enabled, SMT on, swap on, background
