@@ -1,0 +1,5370 @@
+{
+  "dataset": "A_daily",
+  "dataset_b_intraday": {
+    "fixed_queries": {
+      "broad_full_range": {
+        "full_scan": {
+          "ci95_high_seconds": 0.4508229865791908,
+          "ci95_low_seconds": 0.44852717119872626,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.4496750788889585,
+          "median_latency_seconds": 0.44938149600011457,
+          "raw_latency_samples_seconds": [
+            0.45246013999985735,
+            0.4462438539994764,
+            0.44771342700005334,
+            0.4556427489997077,
+            0.45170840800074075,
+            0.4492934439995224,
+            0.44846241300001566,
+            0.4475653150002472,
+            0.45148003099984635,
+            0.447933624000143,
+            0.4473679959992296,
+            0.4497129950004819,
+            0.4507351940001172,
+            0.4484472760004792,
+            0.4507522080002673,
+            0.45130017700012104,
+            0.4478626210002403,
+            0.4494695480007067
+          ],
+          "retained_sample_count": 15,
+          "row_count": 16739,
+          "sample_count": 18,
+          "std_latency_seconds": 0.0023081326405860665,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.44895600820006315,
+          "upper_trimmed_std_seconds": 0.0015880598634304475
+        },
+        "num_trials": 18,
+        "pushdown_query": {
+          "acquisition_order": [
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 0
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 0
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 0
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 1
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 2
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 2
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 2
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 3
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 4
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 4
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 4
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 5
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 6
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 6
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 6
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 7
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 8
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 8
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 8
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 9
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 10
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 10
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 10
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 11
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 12
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 12
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 12
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 13
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 14
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 14
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 14
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 15
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 16
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 16
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 16
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 17
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 17
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 17
+            }
+          ],
+          "candidate_chunks": 300,
+          "chunks_skipped_ratio": 0.0,
+          "ci95_high_seconds": 0.09753799827483907,
+          "ci95_low_seconds": 0.09736974161401336,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.09745386994442622,
+          "median_latency_seconds": 0.09741200749976997,
+          "raw_latency_samples_seconds": [
+            0.09778276100041694,
+            0.09729958299976715,
+            0.0974090059999071,
+            0.09731005300000106,
+            0.09769014899939066,
+            0.09741172800022468,
+            0.0973641749997114,
+            0.09741442700033076,
+            0.09711951699955534,
+            0.09732354700008727,
+            0.09770505100004812,
+            0.0975423559993942,
+            0.09744098500050313,
+            0.09734539999953995,
+            0.09739792700020189,
+            0.09765122400040127,
+            0.09754948300087563,
+            0.09741228699931526
+          ],
+          "requested_trials": 18,
+          "retained_sample_count": 15,
+          "row_count": 16739,
+          "sample_count": 18,
+          "std_latency_seconds": 0.00016915937324596611,
+          "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+          "total_chunks": 300,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.09739944653332107,
+          "upper_trimmed_std_seconds": 0.00012390535964850388,
+          "vectorized_full_scan": {
+            "ci95_high_seconds": 0.09517771025729634,
+            "ci95_low_seconds": 0.0950490756314309,
+            "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+            "mean_latency_seconds": 0.09511339294436362,
+            "median_latency_seconds": 0.09508981899989521,
+            "raw_latency_samples_seconds": [
+              0.09501838599953771,
+              0.09504732499954116,
+              0.09515780899982929,
+              0.09495457100001659,
+              0.09521101500013174,
+              0.09534265099955519,
+              0.09525668100013718,
+              0.09497976900001959,
+              0.09509888699994917,
+              0.09508075099984126,
+              0.09531953300029272,
+              0.09495499900003779,
+              0.0949395640000148,
+              0.0950066550003612,
+              0.09519500100032019,
+              0.09524113599945849,
+              0.09518805199968483,
+              0.09504828799981624
+            ],
+            "retained_sample_count": 15,
+            "row_count": 16739,
+            "sample_count": 18,
+            "std_latency_seconds": 0.00012932476243343705,
+            "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+            "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+            "upper_trim_fraction": 0.15,
+            "upper_trimmed_mean_seconds": 0.09507481386657067,
+            "upper_trimmed_std_seconds": 0.00010226491401102252
+          },
+          "vectorized_full_scan_speedup": 0.9759837449103123
+        },
+        "query": "SELECT * FROM data WHERE date >= '2026-07-10 13:30:00+00:00' AND date <= '2026-07-16 15:24:00+00:00'",
+        "requested_trials": 18,
+        "selectivity": 1.0,
+        "speedup": 4.61423521862589,
+        "warmup_runs": 3
+      },
+      "narrow_symbol_hour": {
+        "full_scan": {
+          "ci95_high_seconds": 0.2542443332787419,
+          "ci95_low_seconds": 0.2535722183878735,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.2539082758333077,
+          "median_latency_seconds": 0.25387488449996454,
+          "raw_latency_samples_seconds": [
+            0.2528288600005908,
+            0.2541004869999597,
+            0.25392343800012895,
+            0.2536803549992328,
+            0.254556737000712,
+            0.25489180800013855,
+            0.2545843819998481,
+            0.2538263309998001,
+            0.25361380699996516,
+            0.2541394259997105,
+            0.25276571299946227,
+            0.2542748689993459,
+            0.25359166100042785,
+            0.25372706899997866,
+            0.25446334700063744,
+            0.2550963290004802,
+            0.2532999369996105,
+            0.25298440899950947
+          ],
+          "retained_sample_count": 15,
+          "row_count": 60,
+          "sample_count": 18,
+          "std_latency_seconds": 0.0006757208489139216,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.25371842973327147,
+          "upper_trimmed_std_seconds": 0.0005596956309989368
+        },
+        "num_trials": 18,
+        "pushdown_query": {
+          "acquisition_order": [
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 0
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 0
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 0
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 1
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 2
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 2
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 2
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 3
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 4
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 4
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 4
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 5
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 6
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 6
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 6
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 7
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 8
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 8
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 8
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 9
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 10
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 10
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 10
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 11
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 12
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 12
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 12
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 13
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 14
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 14
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 14
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 15
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 16
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 16
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 16
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 17
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 17
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 17
+            }
+          ],
+          "candidate_chunks": 1,
+          "chunks_skipped_ratio": 0.9966666666666667,
+          "ci95_high_seconds": 0.0029002388210800784,
+          "ci95_low_seconds": 0.002874395401103848,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.0028873171110919632,
+          "median_latency_seconds": 0.0028784639998775674,
+          "raw_latency_samples_seconds": [
+            0.002866882000489568,
+            0.0029118419997757883,
+            0.002917026000432088,
+            0.002868267999474483,
+            0.0029212110002845293,
+            0.002852736999557237,
+            0.0028617030002351385,
+            0.0029213400002845447,
+            0.0028619400000025053,
+            0.00287608199960232,
+            0.0028808460001528147,
+            0.002898384000218357,
+            0.002859989000171481,
+            0.002920205000009446,
+            0.0028631129998757388,
+            0.002917388999776449,
+            0.0028663949997280724,
+            0.0029063559995847754
+          ],
+          "requested_trials": 18,
+          "retained_sample_count": 15,
+          "row_count": 60,
+          "sample_count": 18,
+          "std_latency_seconds": 2.5982072295134055e-05,
+          "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+          "total_chunks": 300,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.0028805967999384545,
+          "upper_trimmed_std_seconds": 2.3007378772419034e-05,
+          "vectorized_full_scan": {
+            "ci95_high_seconds": 0.09627578165310358,
+            "ci95_low_seconds": 0.09604210801340377,
+            "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+            "mean_latency_seconds": 0.09615894483325367,
+            "median_latency_seconds": 0.09619514649966732,
+            "raw_latency_samples_seconds": [
+              0.09620090599946707,
+              0.09620274400003836,
+              0.09585256399986974,
+              0.09620810499927757,
+              0.09630191500036744,
+              0.09584243200060882,
+              0.09612612399996578,
+              0.0963025060000291,
+              0.09587057099997764,
+              0.09632368900020083,
+              0.09646915499979514,
+              0.0959728340003494,
+              0.09618938699986757,
+              0.09671782899931713,
+              0.09587014399949112,
+              0.0961877949994232,
+              0.0962735100001737,
+              0.09594879700034653
+            ],
+            "retained_sample_count": 15,
+            "row_count": 60,
+            "sample_count": 18,
+            "std_latency_seconds": 0.00023492732021271331,
+            "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+            "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+            "upper_trim_fraction": 0.15,
+            "upper_trimmed_mean_seconds": 0.09609002226661686,
+            "upper_trimmed_std_seconds": 0.00017551293732885585
+          },
+          "vectorized_full_scan_speedup": 33.30390848440164
+        },
+        "query": "SELECT * FROM data WHERE symbol = 'AAPL' AND date >= '2026-07-10 13:30:00+00:00' AND date <= '2026-07-10 14:29:00+00:00'",
+        "requested_trials": 18,
+        "selectivity": 0.0035844435151442737,
+        "speedup": 87.9391719246527,
+        "warmup_runs": 3
+      },
+      "price_threshold": {
+        "full_scan": {
+          "ci95_high_seconds": 0.2311460460749822,
+          "ci95_low_seconds": 0.2299773093690308,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.2305616777220065,
+          "median_latency_seconds": 0.23051048150000497,
+          "raw_latency_samples_seconds": [
+            0.2305041039999196,
+            0.22714202099996328,
+            0.2298706769997807,
+            0.2310307029993055,
+            0.22968418199980078,
+            0.2312068110004475,
+            0.2323565709994,
+            0.2295810949999577,
+            0.22993126999972446,
+            0.23051685900009034,
+            0.23218198399990797,
+            0.23119039499943028,
+            0.2306295129992577,
+            0.23036636599954363,
+            0.23133333599980688,
+            0.23181908199967438,
+            0.2304225950001637,
+            0.23034263499994267
+          ],
+          "retained_sample_count": 15,
+          "row_count": 486,
+          "sample_count": 18,
+          "std_latency_seconds": 0.0011750070855922167,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.23025017079980897,
+          "upper_trimmed_std_seconds": 0.0010207581147177978
+        },
+        "num_trials": 18,
+        "pushdown_query": {
+          "acquisition_order": [
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 0
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 0
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 0
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 1
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 2
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 2
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 2
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 3
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 4
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 4
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 4
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 5
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 6
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 6
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 6
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 7
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 8
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 8
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 8
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 9
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 10
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 10
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 10
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 11
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 12
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 12
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 12
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 13
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 14
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 14
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 14
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 15
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 16
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 16
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 16
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 17
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 17
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 17
+            }
+          ],
+          "candidate_chunks": 10,
+          "chunks_skipped_ratio": 0.9666666666666667,
+          "ci95_high_seconds": 0.005424719866882639,
+          "ci95_low_seconds": 0.005381890466440743,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.005403305166661691,
+          "median_latency_seconds": 0.0053949035000186996,
+          "raw_latency_samples_seconds": [
+            0.005340450000403507,
+            0.005394497999986925,
+            0.005366888000025938,
+            0.00540699399971345,
+            0.005395309000050474,
+            0.005350641999939398,
+            0.0053650600002583815,
+            0.005447375000585453,
+            0.005418636999820592,
+            0.005485239999870828,
+            0.005389487999309495,
+            0.005411803000242799,
+            0.005445153999971808,
+            0.005491662999702385,
+            0.0053767399995194864,
+            0.0054273539999485365,
+            0.005369199000597291,
+            0.005376998999963689
+          ],
+          "requested_trials": 18,
+          "retained_sample_count": 15,
+          "row_count": 486,
+          "sample_count": 18,
+          "std_latency_seconds": 4.30591841041966e-05,
+          "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+          "total_chunks": 300,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.005389014333316785,
+          "upper_trimmed_std_seconds": 2.9269186780545255e-05,
+          "vectorized_full_scan": {
+            "ci95_high_seconds": 0.09559456477415318,
+            "ci95_low_seconds": 0.09540882367033729,
+            "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+            "mean_latency_seconds": 0.09550169422224523,
+            "median_latency_seconds": 0.09552812350011664,
+            "raw_latency_samples_seconds": [
+              0.09554460900017148,
+              0.09569024600023113,
+              0.09526008400007413,
+              0.09555037300015101,
+              0.09540572499918198,
+              0.095287148999887,
+              0.09557009099989955,
+              0.0955116380000618,
+              0.0953230999994048,
+              0.09572290899996005,
+              0.09556513500047004,
+              0.09538282300036371,
+              0.09535082200000033,
+              0.0956925130003583,
+              0.0952595669996299,
+              0.0957317279999188,
+              0.09586393900008261,
+              0.09531804500056751
+            ],
+            "retained_sample_count": 15,
+            "row_count": 486,
+            "sample_count": 18,
+            "std_latency_seconds": 0.0001867376218767079,
+            "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+            "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+            "upper_trim_fraction": 0.15,
+            "upper_trimmed_mean_seconds": 0.09544746133336351,
+            "upper_trimmed_std_seconds": 0.00015014637639968012
+          },
+          "vectorized_full_scan_speedup": 17.674680825263987
+        },
+        "query": "SELECT * FROM data WHERE symbol = 'AAPL' AND price > 321.7350",
+        "requested_trials": 18,
+        "selectivity": 0.029033992472668618,
+        "speedup": 42.670489748491065,
+        "warmup_runs": 3
+      }
+    },
+    "store": {
+      "total_chunks": 300,
+      "total_column_bytes": 669560,
+      "total_rows": 16739
+    }
+  },
+  "fixed_queries": {
+    "Q1": {
+      "full_scan": {
+        "ci95_high_seconds": 0.11386966456357227,
+        "ci95_low_seconds": 0.11354303510320742,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.11370634983338984,
+        "median_latency_seconds": 0.11370034250012395,
+        "raw_latency_samples_seconds": [
+          0.11369434500011266,
+          0.11368743399998493,
+          0.11370634000013524,
+          0.11375522300022567,
+          0.11461626500022248,
+          0.11377210600039689,
+          0.1136373610006558,
+          0.11377280700071424,
+          0.11371036299988191,
+          0.11363966699991579,
+          0.1130018049998398,
+          0.11350710100032302,
+          0.11332602699985728,
+          0.11351675500009151,
+          0.11350993299947731,
+          0.11388871199960704,
+          0.11384559599991917,
+          0.11412645699965651
+        ],
+        "retained_sample_count": 15,
+        "row_count": 1,
+        "sample_count": 18,
+        "std_latency_seconds": 0.00032838185738288695,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.11360552420010209,
+        "upper_trimmed_std_seconds": 0.00021431122659475974
+      },
+      "num_trials": 18,
+      "pushdown_query": {
+        "acquisition_order": [
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 0
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 0
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 0
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 1
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 2
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 2
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 2
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 3
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 4
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 4
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 4
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 5
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 6
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 6
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 6
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 7
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 8
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 8
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 8
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 9
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 10
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 10
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 10
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 11
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 12
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 12
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 12
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 13
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 14
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 14
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 14
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 15
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 16
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 16
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 16
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 17
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 17
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 17
+          }
+        ],
+        "candidate_chunks": 1,
+        "chunks_skipped_ratio": 0.9958333333333333,
+        "ci95_high_seconds": 0.002784901841540838,
+        "ci95_low_seconds": 0.0027384142697276506,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.0027616580556342443,
+        "median_latency_seconds": 0.002755606500159047,
+        "raw_latency_samples_seconds": [
+          0.0028801769994970527,
+          0.002754496000306972,
+          0.002793851999740582,
+          0.002781981999760319,
+          0.0027725930003725807,
+          0.002726622999944084,
+          0.0027290369998809183,
+          0.0027640260004773154,
+          0.002756717000011122,
+          0.0027282259998173686,
+          0.002705824000258872,
+          0.002795387000332994,
+          0.0027037660001951735,
+          0.002737339000304928,
+          0.0027945470001213835,
+          0.002708504999645811,
+          0.0027409660006014747,
+          0.0028357820001474465
+        ],
+        "requested_trials": 18,
+        "retained_sample_count": 15,
+        "row_count": 1,
+        "sample_count": 18,
+        "std_latency_seconds": 4.673698190047566e-05,
+        "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+        "total_chunks": 240,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.002746566600095927,
+        "upper_trimmed_std_seconds": 3.0517970985251756e-05,
+        "vectorized_full_scan": {
+          "ci95_high_seconds": 0.06687652739169553,
+          "ci95_low_seconds": 0.06658145949727495,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.06672899344448524,
+          "median_latency_seconds": 0.0666764574998524,
+          "raw_latency_samples_seconds": [
+            0.06638292700063175,
+            0.0674815190004665,
+            0.06705347500064818,
+            0.06675393899968185,
+            0.06653154400009953,
+            0.0666955289998441,
+            0.06644351100021595,
+            0.06655781700010266,
+            0.0663528610002686,
+            0.0665927849995569,
+            0.06710762199963938,
+            0.06714180000017222,
+            0.06669043599958968,
+            0.06676377599978878,
+            0.06663586500053498,
+            0.06648429199958628,
+            0.06678970499979187,
+            0.06666247900011513
+          ],
+          "retained_sample_count": 15,
+          "row_count": 1,
+          "sample_count": 18,
+          "std_latency_seconds": 0.00029665096074201283,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.06662606273336374,
+          "upper_trimmed_std_seconds": 0.00018068242773181843
+        },
+        "vectorized_full_scan_speedup": 24.162655948062408
+      },
+      "query": "SELECT * FROM data WHERE symbol = 'AAPL' AND date = '2024-03-01'",
+      "requested_trials": 18,
+      "selectivity": 0.0001996007984031936,
+      "speedup": 41.17321824163201,
+      "warmup_runs": 3
+    },
+    "Q2": {
+      "full_scan": {
+        "ci95_high_seconds": 0.11398683916753982,
+        "ci95_low_seconds": 0.11366020016599321,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.11382351966676652,
+        "median_latency_seconds": 0.11377117750043908,
+        "raw_latency_samples_seconds": [
+          0.11373241700039216,
+          0.11396886999955314,
+          0.11438234400065994,
+          0.11394437499984633,
+          0.11449307600014436,
+          0.11378003200024978,
+          0.1139707720003571,
+          0.11373464299958869,
+          0.11400633599987486,
+          0.11396152600082132,
+          0.11352448399975401,
+          0.1132046109996736,
+          0.11344081800052663,
+          0.11376232300062838,
+          0.1134519260003799,
+          0.11365226399993844,
+          0.11417174100006378,
+          0.11364079599934485
+        ],
+        "retained_sample_count": 15,
+        "row_count": 20,
+        "sample_count": 18,
+        "std_latency_seconds": 0.0003283914497539588,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.11371841286672861,
+        "upper_trimmed_std_seconds": 0.00023690505101070283
+      },
+      "num_trials": 18,
+      "pushdown_query": {
+        "acquisition_order": [
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 0
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 0
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 0
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 1
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 2
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 2
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 2
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 3
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 4
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 4
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 4
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 5
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 6
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 6
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 6
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 7
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 8
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 8
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 8
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 9
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 10
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 10
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 10
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 11
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 12
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 12
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 12
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 13
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 14
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 14
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 14
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 15
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 16
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 16
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 16
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 17
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 17
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 17
+          }
+        ],
+        "candidate_chunks": 1,
+        "chunks_skipped_ratio": 0.9958333333333333,
+        "ci95_high_seconds": 0.0027879924448638875,
+        "ci95_low_seconds": 0.002756441999380883,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.002772217222122385,
+        "median_latency_seconds": 0.002791837999211566,
+        "raw_latency_samples_seconds": [
+          0.0027262760004305164,
+          0.0027939189994867775,
+          0.0027449029994386365,
+          0.0027388429998609354,
+          0.00280427400048211,
+          0.0027404200000091805,
+          0.0028075230002286844,
+          0.0028021299995089066,
+          0.0027454380006020074,
+          0.0027926569991905126,
+          0.0027966710003966,
+          0.0027259290000074543,
+          0.0027470019995234907,
+          0.0027910189992326195,
+          0.0027976760002275114,
+          0.0027393549999032984,
+          0.00280179999936081,
+          0.002804075000312878
+        ],
+        "requested_trials": 18,
+        "retained_sample_count": 15,
+        "row_count": 20,
+        "sample_count": 18,
+        "std_latency_seconds": 3.1719716517282625e-05,
+        "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+        "total_chunks": 240,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.002765602533145284,
+        "upper_trimmed_std_seconds": 3.065828060974014e-05,
+        "vectorized_full_scan": {
+          "ci95_high_seconds": 0.06695927925074341,
+          "ci95_low_seconds": 0.06662752197156871,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.06679340061115606,
+          "median_latency_seconds": 0.0667290020001019,
+          "raw_latency_samples_seconds": [
+            0.06670683900028962,
+            0.06675148100021033,
+            0.06688402700001461,
+            0.0667305690003559,
+            0.06808506900051725,
+            0.06666880100056005,
+            0.06658880499981024,
+            0.06674088300042058,
+            0.0667800459996215,
+            0.06666040900017833,
+            0.0667274349998479,
+            0.06676324300042324,
+            0.06669454799975938,
+            0.06686054700003297,
+            0.06669289299952652,
+            0.06658041399987269,
+            0.06657348099997762,
+            0.06679172099939024
+          ],
+          "retained_sample_count": 15,
+          "row_count": 20,
+          "sample_count": 18,
+          "std_latency_seconds": 0.0003335371874110349,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.06669677120001628,
+          "upper_trimmed_std_seconds": 7.071688378571989e-05
+        },
+        "vectorized_full_scan_speedup": 24.093855300422533
+      },
+      "query": "SELECT * FROM data WHERE symbol = 'AAPL' AND date >= '2024-03-01' AND date < '2024-04-01'",
+      "requested_trials": 18,
+      "selectivity": 0.003992015968063872,
+      "speedup": 41.058658303704,
+      "warmup_runs": 3
+    },
+    "Q3": {
+      "full_scan": {
+        "ci95_high_seconds": 0.1386165691245707,
+        "ci95_low_seconds": 0.13829096409760894,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.13845376661108982,
+        "median_latency_seconds": 0.13845714000035514,
+        "raw_latency_samples_seconds": [
+          0.13866161900023144,
+          0.1384162499998638,
+          0.13885939699957817,
+          0.13875800099958724,
+          0.1376044449998517,
+          0.13827156400020613,
+          0.13816974699966522,
+          0.13850410299983196,
+          0.1384096009996938,
+          0.13853458099947602,
+          0.13879299800009903,
+          0.138441836000311,
+          0.13900404600008187,
+          0.1381975770000281,
+          0.13868445700063603,
+          0.13847244400039926,
+          0.1381856020007035,
+          0.13819953099937266
+        ],
+        "retained_sample_count": 15,
+        "row_count": 10,
+        "sample_count": 18,
+        "std_latency_seconds": 0.00032735192780061686,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.13836742386665718,
+        "upper_trimmed_std_seconds": 0.0002837831721006498
+      },
+      "num_trials": 18,
+      "pushdown_query": {
+        "acquisition_order": [
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 0
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 0
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 0
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 1
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 2
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 2
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 2
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 3
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 4
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 4
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 4
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 5
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 6
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 6
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 6
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 7
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 8
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 8
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 8
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 9
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 10
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 10
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 10
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 11
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 12
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 12
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 12
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 13
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 14
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 14
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 14
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 15
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 16
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 16
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 16
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 17
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 17
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 17
+          }
+        ],
+        "candidate_chunks": 2,
+        "chunks_skipped_ratio": 0.9916666666666667,
+        "ci95_high_seconds": 0.003757726551933457,
+        "ci95_low_seconds": 0.0037112571149837035,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.0037344918334585803,
+        "median_latency_seconds": 0.003712035999797081,
+        "raw_latency_samples_seconds": [
+          0.0036911860006512143,
+          0.003708172999722592,
+          0.003698587000144471,
+          0.0037519870002142852,
+          0.003675658000247495,
+          0.003698417999657977,
+          0.003765914000723569,
+          0.003692080000291753,
+          0.0037038789996586274,
+          0.0038121990000945516,
+          0.0037646509999831324,
+          0.003758347000257345,
+          0.0038355030001184787,
+          0.003701661999912176,
+          0.0037883810000494123,
+          0.00376345000040601,
+          0.0036948790002497844,
+          0.0037158989998715697
+        ],
+        "requested_trials": 18,
+        "retained_sample_count": 15,
+        "row_count": 10,
+        "sample_count": 18,
+        "std_latency_seconds": 4.6718749741836556e-05,
+        "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+        "total_chunks": 240,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.0037189846667994666,
+        "upper_trimmed_std_seconds": 3.20179879544791e-05,
+        "vectorized_full_scan": {
+          "ci95_high_seconds": 0.06727779581046417,
+          "ci95_low_seconds": 0.06677394952266663,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.0670258726665654,
+          "median_latency_seconds": 0.06683218950001901,
+          "raw_latency_samples_seconds": [
+            0.06667479900079343,
+            0.06676720599989494,
+            0.06739059899973654,
+            0.06678219300010824,
+            0.066763083999831,
+            0.06682751300013479,
+            0.06701138399967022,
+            0.06675485699997807,
+            0.06675012999949104,
+            0.066766959999768,
+            0.06883437799933745,
+            0.06722619900028803,
+            0.06724756599942339,
+            0.0669261290004215,
+            0.06733492100011063,
+            0.06692261599982885,
+            0.06664830799945776,
+            0.06683686599990324
+          ],
+          "retained_sample_count": 15,
+          "row_count": 10,
+          "sample_count": 18,
+          "std_latency_seconds": 0.0005065494693516175,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.06686038733326617,
+          "upper_trimmed_std_seconds": 0.00017969449490912236
+        },
+        "vectorized_full_scan_speedup": 17.947789325995533
+      },
+      "query": "SELECT * FROM data WHERE symbol IN ('AAPL', 'MSFT') AND date >= '2024-03-01' AND date < '2024-03-08'",
+      "requested_trials": 18,
+      "selectivity": 0.001996007984031936,
+      "speedup": 37.0743257143142,
+      "warmup_runs": 3
+    },
+    "Q4": {
+      "full_scan": {
+        "ci95_high_seconds": 0.1084612209117828,
+        "ci95_low_seconds": 0.10791924064409213,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.10819023077793746,
+        "median_latency_seconds": 0.1081762795006398,
+        "raw_latency_samples_seconds": [
+          0.10844045200065011,
+          0.10868383100023493,
+          0.10777887199947145,
+          0.10822196000026452,
+          0.10788206899997022,
+          0.10786755800018,
+          0.10763482000038493,
+          0.10778653499983193,
+          0.10817917600070359,
+          0.108173383000576,
+          0.10768259999986185,
+          0.10783351600002788,
+          0.11003055699984543,
+          0.10834882200015272,
+          0.10798515799979214,
+          0.10821044000022084,
+          0.10842704600054276,
+          0.10825735900016298
+        ],
+        "retained_sample_count": 15,
+        "row_count": 140,
+        "sample_count": 18,
+        "std_latency_seconds": 0.0005448880415450914,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.10801795426680959,
+        "upper_trimmed_std_seconds": 0.00025482630440507806
+      },
+      "num_trials": 18,
+      "pushdown_query": {
+        "acquisition_order": [
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 0
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 0
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 0
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 1
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 2
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 2
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 2
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 3
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 4
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 4
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 4
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 5
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 6
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 6
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 6
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 7
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 8
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 8
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 8
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 9
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 10
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 10
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 10
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 11
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 12
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 12
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 12
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 13
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 14
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 14
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 14
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 15
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 16
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 16
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 16
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 17
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 17
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 17
+          }
+        ],
+        "candidate_chunks": 7,
+        "chunks_skipped_ratio": 0.9708333333333333,
+        "ci95_high_seconds": 0.004582039726322809,
+        "ci95_low_seconds": 0.004525362496051316,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.0045537011111870624,
+        "median_latency_seconds": 0.004541859500022838,
+        "raw_latency_samples_seconds": [
+          0.004662903999815171,
+          0.00466285099992092,
+          0.004603605000738753,
+          0.0046265690007203375,
+          0.004581178000080399,
+          0.004531353999482235,
+          0.004556740999760223,
+          0.004552365000563441,
+          0.004589969999869936,
+          0.004514834000474366,
+          0.004499360999943747,
+          0.004500115999690024,
+          0.004511027000262402,
+          0.0044975020000492805,
+          0.004571094999846537,
+          0.004491259000133141,
+          0.004513601999860839,
+          0.004500287000155367
+        ],
+        "requested_trials": 18,
+        "retained_sample_count": 15,
+        "row_count": 140,
+        "sample_count": 18,
+        "std_latency_seconds": 5.698130881115228e-05,
+        "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+        "total_chunks": 240,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.004534286400060713,
+        "upper_trimmed_std_seconds": 3.816703782901267e-05,
+        "vectorized_full_scan": {
+          "ci95_high_seconds": 0.06723048356493783,
+          "ci95_low_seconds": 0.06671095910174582,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.06697072133334182,
+          "median_latency_seconds": 0.06682171950023985,
+          "raw_latency_samples_seconds": [
+            0.06688271099937992,
+            0.06736184399960621,
+            0.06721853099952568,
+            0.06732089199977054,
+            0.06717682199996489,
+            0.0687155330006135,
+            0.0665715180002735,
+            0.06661718499981362,
+            0.0669394189999366,
+            0.0664797350000299,
+            0.06670165400009864,
+            0.06728332300008333,
+            0.06682585400085372,
+            0.06666589100041165,
+            0.06681758499962598,
+            0.06676492699989467,
+            0.06655130600029224,
+            0.06657825399997819
+          ],
+          "retained_sample_count": 15,
+          "row_count": 140,
+          "sample_count": 18,
+          "std_latency_seconds": 0.0005223117595953112,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.06680498100001084,
+          "upper_trimmed_std_seconds": 0.00025435502470058267
+        },
+        "vectorized_full_scan_speedup": 14.706876823517264
+      },
+      "query": "SELECT * FROM data WHERE symbol = 'AAPL' AND price > 200 AND date >= '2024-01-01'",
+      "requested_trials": 18,
+      "selectivity": 0.027944111776447105,
+      "speedup": 23.75874659672917,
+      "warmup_runs": 3
+    },
+    "Q5": {
+      "full_scan": {
+        "ci95_high_seconds": 0.14741503213994642,
+        "ci95_low_seconds": 0.1467627559708293,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.14708889405538786,
+        "median_latency_seconds": 0.1470896724999875,
+        "raw_latency_samples_seconds": [
+          0.14602954000019963,
+          0.14705355600017356,
+          0.14712578899980144,
+          0.14685751999968488,
+          0.14748742600022524,
+          0.14805946500018763,
+          0.14651114499974938,
+          0.14825588699932268,
+          0.14819722399988677,
+          0.14713409799969668,
+          0.14717653199932101,
+          0.14633274799962237,
+          0.14627971400022943,
+          0.1467972969994662,
+          0.14755643500029691,
+          0.1474436179996701,
+          0.14648029199997836,
+          0.14682180699946912
+        ],
+        "retained_sample_count": 15,
+        "row_count": 2510,
+        "sample_count": 18,
+        "std_latency_seconds": 0.0006557756906006346,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.1468725011331723,
+        "upper_trimmed_std_seconds": 0.0004687403828175722
+      },
+      "num_trials": 18,
+      "pushdown_query": {
+        "acquisition_order": [
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 0
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 0
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 0
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 1
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 2
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 2
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 2
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 3
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 4
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 4
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 4
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 5
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 6
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 6
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 6
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 7
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 8
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 8
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 8
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 9
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 10
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 10
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 10
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 11
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 12
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 12
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 12
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 13
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 14
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 14
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 14
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 15
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 16
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 16
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 16
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 17
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 17
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 17
+          }
+        ],
+        "candidate_chunks": 120,
+        "chunks_skipped_ratio": 0.5,
+        "ci95_high_seconds": 0.03547993096719289,
+        "ci95_low_seconds": 0.03542810136604453,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.03545401616661871,
+        "median_latency_seconds": 0.035456394999982876,
+        "raw_latency_samples_seconds": [
+          0.03538731800017558,
+          0.035454544000458554,
+          0.03549882199968124,
+          0.03549531099997694,
+          0.03546722699957172,
+          0.03542196899979899,
+          0.035485719999996945,
+          0.03543051700034994,
+          0.0353839909994349,
+          0.035368116999961785,
+          0.03550695400008408,
+          0.03550084900052752,
+          0.035433381000075315,
+          0.03538948899949901,
+          0.03547542199976306,
+          0.03556735599977401,
+          0.035447058000499965,
+          0.0354582459995072
+        ],
+        "requested_trials": 18,
+        "retained_sample_count": 15,
+        "row_count": 2510,
+        "sample_count": 18,
+        "std_latency_seconds": 5.210767171308074e-05,
+        "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+        "total_chunks": 240,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.03543980879991674,
+        "upper_trimmed_std_seconds": 4.250140780896738e-05,
+        "vectorized_full_scan": {
+          "ci95_high_seconds": 0.06590830967058901,
+          "ci95_low_seconds": 0.0657624114405365,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.06583536055556276,
+          "median_latency_seconds": 0.06577538000010463,
+          "raw_latency_samples_seconds": [
+            0.06626643599975068,
+            0.06577299299988226,
+            0.06588346600074146,
+            0.06571754600008717,
+            0.06574996800009103,
+            0.06576395100000809,
+            0.06587059699995734,
+            0.06575777200032462,
+            0.06573434900019492,
+            0.0661552510000547,
+            0.06573416900027951,
+            0.06577207499958604,
+            0.065777767000327,
+            0.06581556099990848,
+            0.06581929899948591,
+            0.06588817600004404,
+            0.06576832100017782,
+            0.06578879299922846
+          ],
+          "retained_sample_count": 15,
+          "row_count": 2510,
+          "sample_count": 18,
+          "std_latency_seconds": 0.00014668098744062867,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.06578177513335201,
+          "upper_trimmed_std_seconds": 4.7617476506674655e-05
+        },
+        "vectorized_full_scan_speedup": 1.8569225062166363
+      },
+      "query": "SELECT * FROM data WHERE date >= '2024-01-01'",
+      "requested_trials": 18,
+      "selectivity": 0.500998003992016,
+      "speedup": 4.148723049150003,
+      "warmup_runs": 3
+    }
+  },
+  "generated_at_utc": "2026-11-10T16:07:05.890629+00:00",
+  "manifest": {
+    "complete": true,
+    "completed_at_utc": "2026-11-10T16:08:39.010748+00:00",
+    "dependency_versions": {
+      "matplotlib": "3.8.3",
+      "numpy": "1.26.4",
+      "pandas": "2.2.1",
+      "psutil": "5.9.8",
+      "sqlglot": "23.9.0"
+    },
+    "fixture_files": {
+      "/home/abc/Desktop/Resume Projects/PitDB/data/cache/all_symbols_1m.csv": "bf07d8f1140fe78f7e9e401df91e47155dbb7808705f4a16ae2047f11044a32d",
+      "/home/abc/Desktop/Resume Projects/PitDB/data/cache/all_symbols_daily.csv": "8992e0ab010bf0453554cefea7e9ca1125cd99cc2e658525e6ca397aaba0de54"
+    },
+    "git_commit": "f3c2bc00f235278186b2dc746cc495b515ed1365",
+    "git_worktree": {
+      "dirty": true,
+      "status": [
+        " M .gitignore",
+        " M ARCHITECTURE.md",
+        " M All_Commands.md",
+        " D LICENSE",
+        " M METHODOLOGY.md",
+        " M Makefile",
+        " M README.md",
+        " M benchmarks/bench_bitemporal.py",
+        " M benchmarks/bench_chunk_granularity.py",
+        " M benchmarks/bench_memory.py",
+        " M benchmarks/bench_query.py",
+        " M benchmarks/bench_scale.py",
+        " M benchmarks/config.py",
+        " M benchmarks/measurement.py",
+        " M benchmarks/reporting/provenance.py",
+        " M benchmarks/run_all.py",
+        " M benchmarks/run_suite.py",
+        " M benchmarks/stats.py",
+        " M benchmarks_consolidated_session_2.md",
+        " M charts/chart_bitemporal.py",
+        " M charts/chart_chunk_granularity.py",
+        " M charts/chart_chunks_skipped.py",
+        " M charts/chart_latency_bar.py",
+        " M charts/chart_memory.py",
+        " M charts/chart_scale_sweep.py",
+        " M charts/chart_speedup_vs_selectivity.py",
+        " M data/README.md",
+        " M data/download_data.py",
+        " M pyproject.toml",
+        " M requirements.txt",
+        " M setup.py",
+        " M src/baselines/full_scan.py",
+        " M src/pipeline.py",
+        " M src/query/executor.py",
+        " M src/query/predicate.py",
+        " M src/query/schema.py",
+        " M src/query/sql_parser.py",
+        " M src/query/versioning.py",
+        " M src/replay/data_loader.py",
+        " M src/replay/replay_harness.py",
+        " M src/store/chunk.py",
+        " M src/store/chunk_builder.py",
+        " M src/store/chunk_store.py",
+        " M src/store/label.py",
+        " M tests/test_benchmark_integrity.py",
+        " M tests/test_chunk_store.py",
+        " M tests/test_data_loader.py",
+        " M tests/test_end_to_end.py",
+        " M tests/test_replay.py",
+        " M tests/test_sql_parser.py",
+        " M tests/test_storage_regressions.py",
+        "?? PITDB_AUDIT_PROMPT.md",
+        "?? benchmarks/render_results.py",
+        "?? tests/test_packaging.py",
+        "?? tests/test_pipeline_cli.py",
+        "?? tests/test_query_audit_regressions.py",
+        "?? tests/test_query_parity_fuzz.py",
+        "?? tests/test_store_hardening.py"
+      ]
+    },
+    "hardware": {
+      "logical_cpu_count": 12,
+      "machine": "x86_64",
+      "physical_cpu_count": 10,
+      "processor": "",
+      "python_version": "3.11.15",
+      "release": "7.0.0-42-generic",
+      "system": "Linux",
+      "total_memory_bytes": 15882858496
+    },
+    "parameters": {
+      "benchmark": "daily_queries_and_memory",
+      "include_memory": true,
+      "num_trials": 18,
+      "warmup_runs": 3
+    },
+    "run_id": "3be484a8e3f846b5956a7a9bb1cba282",
+    "schema_version": 1,
+    "source": {
+      "files": {
+        "benchmarks/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "benchmarks/bench_bitemporal.py": "d9499baa8cff3a837a831b00dfd50577f0ebccb8ff21e0b91fd1951f03740977",
+        "benchmarks/bench_chunk_granularity.py": "b6148c9027b36876b63b1cef059f2896586f99b4dcd8bf0403ea246d09c33a97",
+        "benchmarks/bench_memory.py": "8f46433232e078998236a5e941d026505faf560956fbe639f017926749510b5e",
+        "benchmarks/bench_query.py": "776a5268327827104c68137d980b78fe5dc4e79842e10b81dd16a82885fc0ee9",
+        "benchmarks/bench_scale.py": "b1e2c3c5b18b7f3932476bf966b827051b1c3e26a5123e3f1b5294ccc35e81d5",
+        "benchmarks/config.py": "29daaf7164a33bb01f5466a3a01d4b603194f9fee5ead6707b46e6ea1ade689e",
+        "benchmarks/measurement.py": "63fe4cef374808a9c56c9f933ebda5ccf21e787294454d6d265ff790b527b0d9",
+        "benchmarks/render_results.py": "1c2132daf407f76c8e82208924e74d7c9aa91cdc75e4863eb983f592ffc4f431",
+        "benchmarks/report.py": "804aef7441177200ac51fe922bbb2cfb7efaf6f0ff4dcc4f3a169e06df7fb93e",
+        "benchmarks/reporting/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "benchmarks/reporting/console.py": "fed46af7b74ee40c7549c5ef97be24c438bc36e28dd5c73df3bccb712a9ff3c3",
+        "benchmarks/reporting/environment.py": "060fb42dd1edffae6cb6d80d6c25a95ded361dffd697fd4774845dba5208da4b",
+        "benchmarks/reporting/provenance.py": "fdcf00d4440a35f293dd4512318121bf25edc609b9128981b2288fee872411b9",
+        "benchmarks/reporting/validation.py": "e74219bc35918553a22d42cb9e179bb06f8ed2d41e3b6b6979f409b1f36d2bc0",
+        "benchmarks/run_all.py": "474013e8da6197b256c8ae358506450c34002132972463e09fbd7dfebd15d060",
+        "benchmarks/run_suite.py": "1f9b522ed2e261e7827ba8c4ce9741d481e70411ef2a996e7aa6122622218f76",
+        "benchmarks/stats.py": "006633d37ad1edd2dadeecf131a50d562a3baf7ad262554da3ed53b5bf26f781",
+        "benchmarks/synthetic_data.py": "7c61e082e5ac0ee227949a56023e4902dd32ed3b3cc02214868ff74ff88894de",
+        "charts/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "charts/chart_bitemporal.py": "5366cb639b286c2d8ffef23f9a1d98f67a4cbb7d8de51aeb7d588ce9529bdc05",
+        "charts/chart_chunk_granularity.py": "a933421d0b658e8e8ef678b06a66a3c3781fb77945dd90184b291f9135823189",
+        "charts/chart_chunks_skipped.py": "f43d0a3af17259ce539de62168b8b3db3ca72a88418cd5781716d7ba894c6918",
+        "charts/chart_latency_bar.py": "9484e748e206bc8467bba9e97cefedc83c8376df84d4fdc5f1821894f4265121",
+        "charts/chart_memory.py": "e7601010851afb3556505e79df4a463392e0fa367f052b7907919300434582f8",
+        "charts/chart_scale_sweep.py": "096865cdc48654e6240f0966b51108716f13e5481d5d54598c3717df044b39dc",
+        "charts/chart_speedup_vs_selectivity.py": "beb6e8bb63e3ac5bbbe251c1a0b66250eae2c7f0d6798ed2d7096ce92e7952d4",
+        "charts/generate_all.py": "f09e84f23718fb7f55f2cc8dbd67343d455459270e282370c20775d10b1d44c3",
+        "pyproject.toml": "72506213d7ab7bf020620889a2d7a4396e78f4394483e9fadfb5d7f10ad64664",
+        "requirements.txt": "ecddaab70a08abfaff822d7c099c9a2a5758aeb7c48f30c36dcbd6ee7ecddb8b",
+        "setup.py": "4d2b27f4946c4e5d27d555a9a13813ab8034b2127da14797d2f0a3aa485cfe16",
+        "src/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/baselines/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/baselines/full_scan.py": "0cdb3a6c1bbab0a39b582dfb69e7b783cdaf651d26f955ca24e0ce75cfc2fb81",
+        "src/pipeline.py": "4b6d7ebcf51e0e7123ec962dc124bcd535b672a21a8b77a26e9c0862938cf2a0",
+        "src/query/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/query/executor.py": "746bf6e6f441b580815812fb9f817087e278ddf5766d0298d93b705eae1f2155",
+        "src/query/predicate.py": "8ade9d3fedfdbe4948011b3f2b110261eff76d4850d7a306b74d177f7df1363b",
+        "src/query/pushdown.py": "03fbf771158d87c487a27cec9220cf556bd52901a675831c8ea64d18c4c87df6",
+        "src/query/schema.py": "ea6cdc2cb7daf60d82e0d94461a53e83b935c9c9d076174d0b12e10fe6acaeaa",
+        "src/query/sql_parser.py": "da682d0b08318c97e2271521111bb1771a727362002ad00e6e731760b2ea75eb",
+        "src/query/versioning.py": "98bb33a7e5b694a3bd010fdcebbaa9e9d14a52d3df405a6417b690efc3f0a398",
+        "src/replay/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/replay/data_loader.py": "e89d5df7be38a6e2b251f4c60ae04c0f847b473052408c6ede40447fa0e440c3",
+        "src/replay/replay_harness.py": "cec6636dd0393b4fa7707d8a65816199d04a63f3c2fbdc7f7f6d952ecc440c47",
+        "src/store/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/store/chunk.py": "33da1d1290fee8405556110916bf3e450085d2394b82ca0a5bbc8ab62248d464",
+        "src/store/chunk_boundary.py": "b1e2c832180791e30271d3a35da1af1400dd8e106cb17770944553e31b3a49a5",
+        "src/store/chunk_builder.py": "309c6bb20fe93f080749f10ffe91221d3dfccb4153fd740f1a9d88dbdb8a1a0b",
+        "src/store/chunk_store.py": "34203918c0a5c4885a688591b607e5f736187ce9a3316dd09a8261495c5a454c",
+        "src/store/label.py": "04426e95785a2d4ef303de531325bbd2fd2f24eaca44ebd0ef5ddad2cef85c87",
+        "src/store/validation.py": "3eba9cbe718cfb6c7a66e4063e5a2f8d87332278d0e104ddff6cb9a3adf26b8f"
+      },
+      "sha256": "75259fd76e08b176d05d180eec15bde958223c9f0c3163c2948a3e86ded6769c"
+    },
+    "started_at_utc": "2026-11-10T16:07:05.876439+00:00",
+    "thread_environment": {
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "PYTHONHASHSEED": "0",
+      "VECLIB_MAXIMUM_THREADS": "1"
+    },
+    "timing_scope": "one warm process, perf_counter wall clock; parsing/decompression/filtering included; no fresh-process isolation or significance claims"
+  },
+  "pairwise_interval_comparisons": [
+    {
+      "a_mean_ms": 2.7616580556342445,
+      "b_mean_ms": 2.7722172221223853,
+      "ci95_overlap": true,
+      "inference": "none; interval overlap is descriptive",
+      "query_a": "Q1",
+      "query_b": "Q2"
+    },
+    {
+      "a_mean_ms": 2.7722172221223853,
+      "b_mean_ms": 3.73449183345858,
+      "ci95_overlap": false,
+      "inference": "none; interval overlap is descriptive",
+      "query_a": "Q2",
+      "query_b": "Q3"
+    },
+    {
+      "a_mean_ms": 3.73449183345858,
+      "b_mean_ms": 4.5537011111870624,
+      "ci95_overlap": false,
+      "inference": "none; interval overlap is descriptive",
+      "query_a": "Q3",
+      "query_b": "Q4"
+    },
+    {
+      "a_mean_ms": 4.5537011111870624,
+      "b_mean_ms": 35.45401616661871,
+      "ci95_overlap": false,
+      "inference": "none; interval overlap is descriptive",
+      "query_a": "Q4",
+      "query_b": "Q5"
+    }
+  ],
+  "price_pushdown_demonstration": {
+    "aapl_2024_close_range": [
+      165.0,
+      259.0199890136719
+    ],
+    "date_and_price": {
+      "candidate_chunks": 7,
+      "chunks_skipped_ratio": 0.9708333333333333,
+      "query": "SELECT * FROM data WHERE symbol = 'AAPL' AND price > 200 AND date >= '2024-01-01'",
+      "row_count": 140,
+      "total_chunks": 240
+    },
+    "date_only": {
+      "candidate_chunks": 12,
+      "chunks_skipped_ratio": 0.95,
+      "query": "SELECT * FROM data WHERE symbol = 'AAPL' AND date >= '2024-01-01'",
+      "row_count": 251,
+      "total_chunks": 240
+    },
+    "price_clause_incremental_chunks_pruned": 5,
+    "price_clause_pruned_any_chunks": true
+  },
+  "selectivity_sweep": {
+    "num_trials": 18,
+    "points": [
+      {
+        "actual_selectivity": 1.0,
+        "chunks_skipped_ratio": 0.0,
+        "full_scan": {
+          "ci95_high_seconds": 0.12815612928909717,
+          "ci95_low_seconds": 0.1277582230446023,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.12795717616684973,
+          "median_latency_seconds": 0.1278437840001061,
+          "raw_latency_samples_seconds": [
+            0.1277580610003497,
+            0.12867119699967589,
+            0.1276348439996582,
+            0.12769358600053238,
+            0.12833197899999504,
+            0.1280184890001692,
+            0.1278312240001469,
+            0.12806304300011107,
+            0.1278509630001281,
+            0.12856137699964165,
+            0.1287884600005782,
+            0.127889000000323,
+            0.12765296300040063,
+            0.12763989900031447,
+            0.1278366050000841,
+            0.12798091700005898,
+            0.1272376160004569,
+            0.12778894800067064
+          ],
+          "retained_sample_count": 15,
+          "row_count": 5010,
+          "sample_count": 18,
+          "std_latency_seconds": 0.00040004104799828825,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.12781387580022663,
+          "upper_trimmed_std_seconds": 0.00024591173605750154
+        },
+        "pushdown_query": {
+          "acquisition_order": [
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 0
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 0
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 0
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 1
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 2
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 2
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 2
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 3
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 4
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 4
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 4
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 5
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 6
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 6
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 6
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 7
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 8
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 8
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 8
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 9
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 10
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 10
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 10
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 11
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 12
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 12
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 12
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 13
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 14
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 14
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 14
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 15
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 16
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 16
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 16
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 17
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 17
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 17
+            }
+          ],
+          "candidate_chunks": 240,
+          "chunks_skipped_ratio": 0.0,
+          "ci95_high_seconds": 0.06656483844982476,
+          "ci95_low_seconds": 0.06646071177242753,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.06651277511112615,
+          "median_latency_seconds": 0.06648558349934319,
+          "raw_latency_samples_seconds": [
+            0.06670289700014109,
+            0.06640959400010615,
+            0.06661322899981315,
+            0.06645017600021674,
+            0.06649965399992652,
+            0.06646374200045102,
+            0.06651825300014025,
+            0.06633213399982196,
+            0.06643673700000363,
+            0.06647758500002965,
+            0.06650721200003318,
+            0.06647368999983883,
+            0.06661263899968617,
+            0.06648799999948096,
+            0.06648316699920542,
+            0.06646927300062089,
+            0.06677412400040339,
+            0.06651784600035171
+          ],
+          "requested_trials": 18,
+          "retained_sample_count": 15,
+          "row_count": 5010,
+          "sample_count": 18,
+          "std_latency_seconds": 0.00010468532657346463,
+          "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+          "total_chunks": 240,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.06647598013332753,
+          "upper_trimmed_std_seconds": 6.062453827045352e-05,
+          "vectorized_full_scan": {
+            "ci95_high_seconds": 0.06578720607128022,
+            "ci95_low_seconds": 0.06562913092911749,
+            "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+            "mean_latency_seconds": 0.06570816850019885,
+            "median_latency_seconds": 0.06566336200057776,
+            "raw_latency_samples_seconds": [
+              0.06570142600048712,
+              0.06559370600007242,
+              0.06568631600021035,
+              0.06556181799987826,
+              0.06566233100056706,
+              0.06570213499981037,
+              0.06591489900074521,
+              0.06565058800060797,
+              0.06577259299956495,
+              0.06574784400072531,
+              0.06554329699974915,
+              0.06559214400022029,
+              0.06622066099953372,
+              0.06562525200024538,
+              0.06583790900003805,
+              0.06566439300058846,
+              0.06565408000005846,
+              0.0656156410004769
+            ],
+            "retained_sample_count": 15,
+            "row_count": 5010,
+            "sample_count": 18,
+            "std_latency_seconds": 0.0001589232298013638,
+            "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+            "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+            "upper_trim_fraction": 0.15,
+            "upper_trimmed_mean_seconds": 0.06565157093355083,
+            "upper_trimmed_std_seconds": 6.496930770542834e-05
+          },
+          "vectorized_full_scan_speedup": 0.9879029763893779
+        },
+        "query": "SELECT * FROM data WHERE timestamp >= '2023-01-03 00:00:00+00:00'",
+        "row_count": 5010,
+        "speedup": 1.923798487629864,
+        "target_selectivity": 1.0
+      },
+      {
+        "actual_selectivity": 0.500998003992016,
+        "chunks_skipped_ratio": 0.5,
+        "full_scan": {
+          "ci95_high_seconds": 0.12795637720568864,
+          "ci95_low_seconds": 0.12749432401660477,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.1277253506111467,
+          "median_latency_seconds": 0.12778556650027895,
+          "raw_latency_samples_seconds": [
+            0.1277451320002001,
+            0.12787942599970847,
+            0.12869348500043998,
+            0.12744792600005894,
+            0.1269544759998098,
+            0.1278260010003578,
+            0.12705585099956807,
+            0.12731136599995807,
+            0.12721402599981957,
+            0.12750052199953643,
+            0.1274825509999573,
+            0.12832787600018492,
+            0.1275271630001953,
+            0.12807397100004891,
+            0.12838389799981087,
+            0.12784296600057132,
+            0.12795091000043612,
+            0.1278387649999786
+          ],
+          "retained_sample_count": 15,
+          "row_count": 2510,
+          "sample_count": 18,
+          "std_latency_seconds": 0.0004645321468294938,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.12757673680001366,
+          "upper_trimmed_std_seconds": 0.0003383927648531746
+        },
+        "pushdown_query": {
+          "acquisition_order": [
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 0
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 0
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 0
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 1
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 2
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 2
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 2
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 3
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 4
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 4
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 4
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 5
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 6
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 6
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 6
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 7
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 8
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 8
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 8
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 9
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 10
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 10
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 10
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 11
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 12
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 12
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 12
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 13
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 14
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 14
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 14
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 15
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 16
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 16
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 16
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 17
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 17
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 17
+            }
+          ],
+          "candidate_chunks": 120,
+          "chunks_skipped_ratio": 0.5,
+          "ci95_high_seconds": 0.03463243717186466,
+          "ci95_low_seconds": 0.034581005939275336,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.03460672155557,
+          "median_latency_seconds": 0.03459942749987022,
+          "raw_latency_samples_seconds": [
+            0.034646199000235356,
+            0.03463304100023379,
+            0.03455442100039363,
+            0.034560271999907854,
+            0.03459357099927729,
+            0.03458792999936122,
+            0.03460528400046314,
+            0.03463528900010715,
+            0.034616640000422194,
+            0.0345488729999488,
+            0.03456035699946369,
+            0.034685071000239986,
+            0.03456478200041602,
+            0.03455236199988576,
+            0.03463024199936626,
+            0.03457765100029064,
+            0.034743741000056616,
+            0.03462526200019056
+          ],
+          "requested_trials": 18,
+          "retained_sample_count": 15,
+          "row_count": 2510,
+          "sample_count": 18,
+          "std_latency_seconds": 5.1707165870185464e-05,
+          "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+          "total_chunks": 240,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.034589731799981864,
+          "upper_trimmed_std_seconds": 3.2349119915791006e-05,
+          "vectorized_full_scan": {
+            "ci95_high_seconds": 0.0658526355330927,
+            "ci95_low_seconds": 0.0657728322448774,
+            "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+            "mean_latency_seconds": 0.06581273388898505,
+            "median_latency_seconds": 0.06580401500013977,
+            "raw_latency_samples_seconds": [
+              0.06581028900018282,
+              0.06578795000041282,
+              0.06577341699994577,
+              0.06596114700005273,
+              0.06592491500032338,
+              0.06581200100026763,
+              0.06578736699975707,
+              0.06581786900005682,
+              0.0657513950000066,
+              0.06580743799986521,
+              0.06564160700054344,
+              0.06575472700023965,
+              0.06572151299951656,
+              0.06583635300012247,
+              0.06580059200041433,
+              0.06579254400003265,
+              0.06594982699971297,
+              0.0658982590002779
+            ],
+            "retained_sample_count": 15,
+            "row_count": 2510,
+            "sample_count": 18,
+            "std_latency_seconds": 8.023144017728747e-05,
+            "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+            "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+            "upper_trim_fraction": 0.15,
+            "upper_trimmed_mean_seconds": 0.06578622140010945,
+            "upper_trimmed_std_seconds": 5.699697523117024e-05
+          },
+          "vectorized_full_scan_speedup": 1.9017326961557386
+        },
+        "query": "SELECT * FROM data WHERE timestamp >= '2024-01-01 12:00:00+00:00'",
+        "row_count": 2510,
+        "speedup": 3.6907671362642884,
+        "target_selectivity": 0.5
+      },
+      {
+        "actual_selectivity": 0.09780439121756487,
+        "chunks_skipped_ratio": 0.875,
+        "full_scan": {
+          "ci95_high_seconds": 0.12791860802333563,
+          "ci95_low_seconds": 0.12747382986544828,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.12769621894439195,
+          "median_latency_seconds": 0.12770841049996307,
+          "raw_latency_samples_seconds": [
+            0.12829447999956756,
+            0.12752802100021654,
+            0.12774059799994575,
+            0.12699916400015354,
+            0.1269652020000649,
+            0.12858452100044815,
+            0.12767622299998038,
+            0.12767461099974753,
+            0.12725397099984548,
+            0.1273037300006763,
+            0.12802387099964108,
+            0.12751433300036297,
+            0.12788841399924422,
+            0.12715877299979184,
+            0.1280899519997547,
+            0.12805236100030015,
+            0.12800715999946988,
+            0.12777655599984428
+          ],
+          "retained_sample_count": 15,
+          "row_count": 490,
+          "sample_count": 18,
+          "std_latency_seconds": 0.00044716443350586364,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.12757086586661898,
+          "upper_trimmed_std_seconds": 0.0003646455281354399
+        },
+        "pushdown_query": {
+          "acquisition_order": [
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 0
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 0
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 0
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 1
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 2
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 2
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 2
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 3
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 4
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 4
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 4
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 5
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 6
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 6
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 6
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 7
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 8
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 8
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 8
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 9
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 10
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 10
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 10
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 11
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 12
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 12
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 12
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 13
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 14
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 14
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 14
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 15
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 16
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 16
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 16
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 17
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 17
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 17
+            }
+          ],
+          "candidate_chunks": 30,
+          "chunks_skipped_ratio": 0.875,
+          "ci95_high_seconds": 0.01083452417363223,
+          "ci95_low_seconds": 0.010782885270705854,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.010808704722169042,
+          "median_latency_seconds": 0.010801595999964775,
+          "raw_latency_samples_seconds": [
+            0.01084176899985323,
+            0.010874820000026375,
+            0.010767448000478907,
+            0.01090011999986018,
+            0.010757054000350763,
+            0.010788145000333316,
+            0.010830998999153962,
+            0.010730435000368743,
+            0.010815046999596234,
+            0.010898907000409963,
+            0.010771434000162117,
+            0.010842560999662965,
+            0.010778474000289862,
+            0.010842912999578402,
+            0.01078653900003701,
+            0.01074566599982063,
+            0.010829424999428738,
+            0.010754928999631375
+          ],
+          "requested_trials": 18,
+          "retained_sample_count": 15,
+          "row_count": 490,
+          "sample_count": 18,
+          "std_latency_seconds": 5.1915950377642564e-05,
+          "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+          "total_chunks": 240,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.010792189199916417,
+          "upper_trimmed_std_seconds": 3.860389439174702e-05,
+          "vectorized_full_scan": {
+            "ci95_high_seconds": 0.06586542024445875,
+            "ci95_low_seconds": 0.06576291442239822,
+            "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+            "mean_latency_seconds": 0.06581416733342849,
+            "median_latency_seconds": 0.06579673750002257,
+            "raw_latency_samples_seconds": [
+              0.06577133300015703,
+              0.06570416900012788,
+              0.06580698499965365,
+              0.06589938299930509,
+              0.06579533900003298,
+              0.06579813600001216,
+              0.06612938899979781,
+              0.06578168000032747,
+              0.06581999300033203,
+              0.06576237700028287,
+              0.06596695600001112,
+              0.06569958900035999,
+              0.06586474100004125,
+              0.06581776100028947,
+              0.06576154800040968,
+              0.06580605400085915,
+              0.06571162299951538,
+              0.06575795600019774
+            ],
+            "retained_sample_count": 15,
+            "row_count": 490,
+            "sample_count": 18,
+            "std_latency_seconds": 0.00010305577519919189,
+            "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+            "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+            "upper_trim_fraction": 0.15,
+            "upper_trimmed_mean_seconds": 0.06577728560017325,
+            "upper_trimmed_std_seconds": 4.642479218985979e-05
+          },
+          "vectorized_full_scan_speedup": 6.0889966952692545
+        },
+        "query": "SELECT * FROM data WHERE timestamp >= '2024-10-18 07:12:00+00:00'",
+        "row_count": 490,
+        "speedup": 11.814201814809726,
+        "target_selectivity": 0.1
+      },
+      {
+        "actual_selectivity": 0.00998003992015968,
+        "chunks_skipped_ratio": 0.9583333333333334,
+        "full_scan": {
+          "ci95_high_seconds": 0.12790245755684396,
+          "ci95_low_seconds": 0.12744014010969537,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.12767129883326966,
+          "median_latency_seconds": 0.1275976665001508,
+          "raw_latency_samples_seconds": [
+            0.1269914989998142,
+            0.12750703199981217,
+            0.12762688499969954,
+            0.1285904970000047,
+            0.1269416259992795,
+            0.12790986499931023,
+            0.1275707920003697,
+            0.12718784800017602,
+            0.12767493299998023,
+            0.1276182270003119,
+            0.12826857399977598,
+            0.12774401499973465,
+            0.12855795199993736,
+            0.12748711600033857,
+            0.1273458940004275,
+            0.12805307500002527,
+            0.1274304429998665,
+            0.12757710599998973
+          ],
+          "retained_sample_count": 15,
+          "row_count": 50,
+          "sample_count": 18,
+          "std_latency_seconds": 0.00046479782266296973,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.12751109039994238,
+          "upper_trimmed_std_seconds": 0.00030470259590697216
+        },
+        "pushdown_query": {
+          "acquisition_order": [
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 0
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 0
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 0
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 1
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 2
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 2
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 2
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 3
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 4
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 4
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 4
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 5
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 6
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 6
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 6
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 7
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 8
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 8
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 8
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 9
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 10
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 10
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 10
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 11
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 12
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 12
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 12
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 13
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 14
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 14
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 14
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 15
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 16
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 16
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 16
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 17
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 17
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 17
+            }
+          ],
+          "candidate_chunks": 10,
+          "chunks_skipped_ratio": 0.9583333333333334,
+          "ci95_high_seconds": 0.005320675145899095,
+          "ci95_low_seconds": 0.005278799631942761,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.005299737388920928,
+          "median_latency_seconds": 0.005278309499772149,
+          "raw_latency_samples_seconds": [
+            0.005357482999897911,
+            0.0052689160002046265,
+            0.0052631680000558845,
+            0.005371319000005315,
+            0.005273823000607081,
+            0.005273927999951411,
+            0.005275054999401618,
+            0.0053259209998941515,
+            0.005386685999837937,
+            0.005284415000460285,
+            0.00528156400014268,
+            0.005351696000616357,
+            0.0052963589996579685,
+            0.005269383000268135,
+            0.00526159600030951,
+            0.00532823199955601,
+            0.005265037999379274,
+            0.005260691000330553
+          ],
+          "requested_trials": 18,
+          "retained_sample_count": 15,
+          "row_count": 50,
+          "sample_count": 18,
+          "std_latency_seconds": 4.2100179930136213e-05,
+          "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+          "total_chunks": 240,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.005285319000055703,
+          "upper_trimmed_std_seconds": 2.8023376616134308e-05,
+          "vectorized_full_scan": {
+            "ci95_high_seconds": 0.06579997125891518,
+            "ci95_low_seconds": 0.0657041939634802,
+            "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+            "mean_latency_seconds": 0.06575208261119769,
+            "median_latency_seconds": 0.06574692400045024,
+            "raw_latency_samples_seconds": [
+              0.06579417900047702,
+              0.06571644399991783,
+              0.0655410170002142,
+              0.06564708299993072,
+              0.06564293799965526,
+              0.06580014900009701,
+              0.06575854600032471,
+              0.06578329600051802,
+              0.06570534399997996,
+              0.06593072000032407,
+              0.06585621799968067,
+              0.06587449799917522,
+              0.06567617800010339,
+              0.06580024800041429,
+              0.06570282299981045,
+              0.06573530200057576,
+              0.0657130440004039,
+              0.06585945999995602
+            ],
+            "retained_sample_count": 15,
+            "row_count": 50,
+            "sample_count": 18,
+            "std_latency_seconds": 9.62911494110563e-05,
+            "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+            "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+            "upper_trim_fraction": 0.15,
+            "upper_trimmed_mean_seconds": 0.06572485393347355,
+            "upper_trimmed_std_seconds": 7.931672123749166e-05
+          },
+          "vectorized_full_scan_speedup": 12.40666806409164
+        },
+        "query": "SELECT * FROM data WHERE timestamp >= '2024-12-22 17:31:12+00:00'",
+        "row_count": 50,
+        "speedup": 24.090117955686978,
+        "target_selectivity": 0.01
+      },
+      {
+        "actual_selectivity": 0.001996007984031936,
+        "chunks_skipped_ratio": 0.9583333333333334,
+        "full_scan": {
+          "ci95_high_seconds": 0.12792626810534888,
+          "ci95_low_seconds": 0.127511441561143,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.12771885483324594,
+          "median_latency_seconds": 0.12773759850006172,
+          "raw_latency_samples_seconds": [
+            0.12796265899942227,
+            0.12769999000011012,
+            0.12775378700007423,
+            0.12770191000072373,
+            0.12772141000004922,
+            0.1279123909998816,
+            0.12720268799967016,
+            0.12758992799990665,
+            0.12779312000020582,
+            0.12751061800008756,
+            0.12817265000012412,
+            0.12803640799938876,
+            0.12750729999970645,
+            0.12645240699930582,
+            0.12790690300062124,
+            0.12765217800006212,
+            0.12840825299917924,
+            0.1279547869999078
+          ],
+          "retained_sample_count": 15,
+          "row_count": 10,
+          "sample_count": 18,
+          "std_latency_seconds": 0.0004170521266694395,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.12762147173331564,
+          "upper_trimmed_std_seconds": 0.00038102869950302516
+        },
+        "pushdown_query": {
+          "acquisition_order": [
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 0
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 0
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 0
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 1
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 1
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 2
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 2
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 2
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 3
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 3
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 4
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 4
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 4
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 5
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 5
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 6
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 6
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 6
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 7
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 7
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 8
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 8
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 8
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 9
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 9
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 10
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 10
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 10
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 11
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 11
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 12
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 12
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 12
+            },
+            {
+              "engine": "full_scan",
+              "position": 0,
+              "round": 13
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 13
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 14
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 14
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 2,
+              "round": 14
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 0,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 1,
+              "round": 15
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 15
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 16
+            },
+            {
+              "engine": "full_scan",
+              "position": 1,
+              "round": 16
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 2,
+              "round": 16
+            },
+            {
+              "engine": "pushdown_query",
+              "position": 0,
+              "round": 17
+            },
+            {
+              "engine": "vectorized_full_scan",
+              "position": 1,
+              "round": 17
+            },
+            {
+              "engine": "full_scan",
+              "position": 2,
+              "round": 17
+            }
+          ],
+          "candidate_chunks": 10,
+          "chunks_skipped_ratio": 0.9583333333333334,
+          "ci95_high_seconds": 0.00533679719726277,
+          "ci95_low_seconds": 0.005296143247480051,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.005316470222371411,
+          "median_latency_seconds": 0.005304668999997375,
+          "raw_latency_samples_seconds": [
+            0.005315546000019822,
+            0.005371182000089902,
+            0.0052562650007530465,
+            0.005324202999872796,
+            0.0053837530003875145,
+            0.0053003639995949925,
+            0.005271402999824204,
+            0.005283380000037141,
+            0.005359747000511561,
+            0.00529167900003813,
+            0.0052835940005024895,
+            0.005334843000127876,
+            0.005371044999264996,
+            0.005308974000399758,
+            0.005280112999571429,
+            0.005380162000619748,
+            0.005297129000609857,
+            0.0052830820004601264
+          ],
+          "requested_trials": 18,
+          "retained_sample_count": 15,
+          "row_count": 10,
+          "sample_count": 18,
+          "std_latency_seconds": 4.087206195267008e-05,
+          "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+          "total_chunks": 240,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.005304091133439215,
+          "upper_trimmed_std_seconds": 3.220837460249363e-05,
+          "vectorized_full_scan": {
+            "ci95_high_seconds": 0.06581983308106637,
+            "ci95_low_seconds": 0.06570960569659381,
+            "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+            "mean_latency_seconds": 0.06576471938883009,
+            "median_latency_seconds": 0.06576548299972274,
+            "raw_latency_samples_seconds": [
+              0.06569182700059173,
+              0.06567413799984934,
+              0.06569115399997827,
+              0.06589057900055195,
+              0.0660790049996649,
+              0.06579415499982133,
+              0.0658147080002891,
+              0.06584156700046151,
+              0.06565672800024913,
+              0.06565775499984738,
+              0.06579259799946158,
+              0.06580985300024622,
+              0.0657668569992893,
+              0.06576410900015617,
+              0.06575344300017605,
+              0.06572498299919971,
+              0.06557068999973126,
+              0.06579079999937676
+            ],
+            "retained_sample_count": 15,
+            "row_count": 10,
+            "sample_count": 18,
+            "std_latency_seconds": 0.00011081876450189569,
+            "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+            "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+            "upper_trim_fraction": 0.15,
+            "upper_trimmed_mean_seconds": 0.06573025319988422,
+            "upper_trimmed_std_seconds": 7.092911977889574e-05
+          },
+          "vectorized_full_scan_speedup": 12.36999675312688
+        },
+        "query": "SELECT * FROM data WHERE timestamp >= '2024-12-29 06:33:07.200000+00:00'",
+        "row_count": 10,
+        "speedup": 24.023242770327595,
+        "target_selectivity": 0.001
+      }
+    ],
+    "requested_trials": 18,
+    "warmup_runs": 3
+  },
+  "source": "/home/abc/Desktop/Resume Projects/PitDB/data/cache/all_symbols_daily.csv",
+  "store": {
+    "total_chunks": 240,
+    "total_column_bytes": 200400,
+    "total_rows": 5010
+  }
+}

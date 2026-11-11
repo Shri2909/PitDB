@@ -1,0 +1,3011 @@
+{
+  "findings": {
+    "configured_default_key": "monthly",
+    "configured_default_label": "Monthly",
+    "default_matches_lowest_pushdown": false,
+    "default_vs_best": "the configured default (Monthly) did NOT have the lowest mean pushdown latency; Quarterly did (3.293ms vs 3.738ms)",
+    "fewest_chunks_label": "Quarterly",
+    "finest_pruning_label": "Weekly",
+    "highest_speedup_label": "Weekly",
+    "lowest_pushdown_label": "Quarterly",
+    "lowest_row_wise_label": "Quarterly",
+    "speedup_explanation": "From the coarsest (Quarterly, 80 chunks) to the finest (Weekly, 1,010 chunks) granularity, mean row-wise baseline latency goes from 74.141ms to 298.751ms and mean pushdown latency from 3.293ms to 7.136ms. The speedup ratio mixes both movements: a baseline that slows with chunk count inflates it without any pushdown improvement, so the ratio alone is not evidence that a granularity is better for pushdown."
+  },
+  "generated_at_utc": "2026-11-11T04:39:38.397959+00:00",
+  "git_commit": "f3c2bc0",
+  "hardware": {
+    "logical_cpu_count": 12,
+    "machine": "x86_64",
+    "physical_cpu_count": 10,
+    "processor": "",
+    "python_version": "3.11.15",
+    "release": "7.0.0-42-generic",
+    "system": "Linux",
+    "total_memory_bytes": 15882854400
+  },
+  "manifest": {
+    "complete": true,
+    "completed_at_utc": "2026-11-11T04:39:38.403887+00:00",
+    "dependency_versions": {
+      "matplotlib": "3.8.3",
+      "numpy": "1.26.4",
+      "pandas": "2.2.1",
+      "psutil": "5.9.8",
+      "sqlglot": "23.9.0"
+    },
+    "fixture_files": {},
+    "git_commit": "f3c2bc00f235278186b2dc746cc495b515ed1365",
+    "git_worktree": {
+      "dirty": true,
+      "status": [
+        " M .gitignore",
+        " M ARCHITECTURE.md",
+        " M All_Commands.md",
+        " D LICENSE",
+        " M METHODOLOGY.md",
+        " M Makefile",
+        " M README.md",
+        " M benchmarks/bench_bitemporal.py",
+        " M benchmarks/bench_chunk_granularity.py",
+        " M benchmarks/bench_memory.py",
+        " M benchmarks/bench_query.py",
+        " M benchmarks/bench_scale.py",
+        " M benchmarks/config.py",
+        " M benchmarks/measurement.py",
+        " M benchmarks/reporting/provenance.py",
+        " M benchmarks/run_all.py",
+        " M benchmarks/run_suite.py",
+        " M benchmarks/stats.py",
+        " M benchmarks_consolidated_session_2.md",
+        " M charts/chart_bitemporal.py",
+        " M charts/chart_chunk_granularity.py",
+        " M charts/chart_chunks_skipped.py",
+        " M charts/chart_latency_bar.py",
+        " M charts/chart_memory.py",
+        " M charts/chart_scale_sweep.py",
+        " M charts/chart_speedup_vs_selectivity.py",
+        " M data/README.md",
+        " M data/download_data.py",
+        " M pyproject.toml",
+        " M requirements.txt",
+        " M setup.py",
+        " M src/baselines/full_scan.py",
+        " M src/pipeline.py",
+        " M src/query/executor.py",
+        " M src/query/predicate.py",
+        " M src/query/schema.py",
+        " M src/query/sql_parser.py",
+        " M src/query/versioning.py",
+        " M src/replay/data_loader.py",
+        " M src/replay/replay_harness.py",
+        " M src/store/chunk.py",
+        " M src/store/chunk_builder.py",
+        " M src/store/chunk_store.py",
+        " M src/store/label.py",
+        " M tests/test_benchmark_integrity.py",
+        " M tests/test_chunk_store.py",
+        " M tests/test_data_loader.py",
+        " M tests/test_end_to_end.py",
+        " M tests/test_replay.py",
+        " M tests/test_sql_parser.py",
+        " M tests/test_storage_regressions.py",
+        "?? PITDB_AUDIT_PROMPT.md",
+        "?? benchmarks/render_results.py",
+        "?? tests/test_packaging.py",
+        "?? tests/test_pipeline_cli.py",
+        "?? tests/test_query_audit_regressions.py",
+        "?? tests/test_query_parity_fuzz.py",
+        "?? tests/test_store_hardening.py"
+      ]
+    },
+    "hardware": {
+      "logical_cpu_count": 12,
+      "machine": "x86_64",
+      "physical_cpu_count": 10,
+      "processor": "",
+      "python_version": "3.11.15",
+      "release": "7.0.0-42-generic",
+      "system": "Linux",
+      "total_memory_bytes": 15882854400
+    },
+    "parameters": {
+      "benchmark": "chunk_granularity_sweep",
+      "granularities": [
+        {
+          "key": "weekly",
+          "label": "Weekly",
+          "window": "7 days"
+        },
+        {
+          "key": "monthly",
+          "label": "Monthly",
+          "window": "1 calendar month"
+        },
+        {
+          "key": "quarterly",
+          "label": "Quarterly",
+          "window": "90 days"
+        }
+      ],
+      "num_symbols": 10,
+      "num_trials": 18,
+      "query_symbols": [
+        "SYN000003",
+        "SYN000000",
+        "SYN000007"
+      ],
+      "query_windows": [
+        [
+          "3 months",
+          "2023-06-01",
+          "2023-09-01"
+        ],
+        [
+          "1 month",
+          "2023-06-01",
+          "2023-07-01"
+        ],
+        [
+          "6 months",
+          "2023-04-01",
+          "2023-10-01"
+        ]
+      ],
+      "rows_per_symbol": 501,
+      "synthetic_seed": 1,
+      "warmup": 3
+    },
+    "run_id": "3be484a8e3f846b5956a7a9bb1cba282",
+    "schema_version": 1,
+    "source": {
+      "files": {
+        "benchmarks/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "benchmarks/bench_bitemporal.py": "d9499baa8cff3a837a831b00dfd50577f0ebccb8ff21e0b91fd1951f03740977",
+        "benchmarks/bench_chunk_granularity.py": "b6148c9027b36876b63b1cef059f2896586f99b4dcd8bf0403ea246d09c33a97",
+        "benchmarks/bench_memory.py": "8f46433232e078998236a5e941d026505faf560956fbe639f017926749510b5e",
+        "benchmarks/bench_query.py": "776a5268327827104c68137d980b78fe5dc4e79842e10b81dd16a82885fc0ee9",
+        "benchmarks/bench_scale.py": "b1e2c3c5b18b7f3932476bf966b827051b1c3e26a5123e3f1b5294ccc35e81d5",
+        "benchmarks/config.py": "29daaf7164a33bb01f5466a3a01d4b603194f9fee5ead6707b46e6ea1ade689e",
+        "benchmarks/measurement.py": "63fe4cef374808a9c56c9f933ebda5ccf21e787294454d6d265ff790b527b0d9",
+        "benchmarks/render_results.py": "1c2132daf407f76c8e82208924e74d7c9aa91cdc75e4863eb983f592ffc4f431",
+        "benchmarks/report.py": "804aef7441177200ac51fe922bbb2cfb7efaf6f0ff4dcc4f3a169e06df7fb93e",
+        "benchmarks/reporting/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "benchmarks/reporting/console.py": "fed46af7b74ee40c7549c5ef97be24c438bc36e28dd5c73df3bccb712a9ff3c3",
+        "benchmarks/reporting/environment.py": "060fb42dd1edffae6cb6d80d6c25a95ded361dffd697fd4774845dba5208da4b",
+        "benchmarks/reporting/provenance.py": "fdcf00d4440a35f293dd4512318121bf25edc609b9128981b2288fee872411b9",
+        "benchmarks/reporting/validation.py": "e74219bc35918553a22d42cb9e179bb06f8ed2d41e3b6b6979f409b1f36d2bc0",
+        "benchmarks/run_all.py": "474013e8da6197b256c8ae358506450c34002132972463e09fbd7dfebd15d060",
+        "benchmarks/run_suite.py": "1f9b522ed2e261e7827ba8c4ce9741d481e70411ef2a996e7aa6122622218f76",
+        "benchmarks/stats.py": "006633d37ad1edd2dadeecf131a50d562a3baf7ad262554da3ed53b5bf26f781",
+        "benchmarks/synthetic_data.py": "7c61e082e5ac0ee227949a56023e4902dd32ed3b3cc02214868ff74ff88894de",
+        "charts/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "charts/chart_bitemporal.py": "5366cb639b286c2d8ffef23f9a1d98f67a4cbb7d8de51aeb7d588ce9529bdc05",
+        "charts/chart_chunk_granularity.py": "a933421d0b658e8e8ef678b06a66a3c3781fb77945dd90184b291f9135823189",
+        "charts/chart_chunks_skipped.py": "f43d0a3af17259ce539de62168b8b3db3ca72a88418cd5781716d7ba894c6918",
+        "charts/chart_latency_bar.py": "9484e748e206bc8467bba9e97cefedc83c8376df84d4fdc5f1821894f4265121",
+        "charts/chart_memory.py": "e7601010851afb3556505e79df4a463392e0fa367f052b7907919300434582f8",
+        "charts/chart_scale_sweep.py": "096865cdc48654e6240f0966b51108716f13e5481d5d54598c3717df044b39dc",
+        "charts/chart_speedup_vs_selectivity.py": "beb6e8bb63e3ac5bbbe251c1a0b66250eae2c7f0d6798ed2d7096ce92e7952d4",
+        "charts/generate_all.py": "f09e84f23718fb7f55f2cc8dbd67343d455459270e282370c20775d10b1d44c3",
+        "pyproject.toml": "72506213d7ab7bf020620889a2d7a4396e78f4394483e9fadfb5d7f10ad64664",
+        "requirements.txt": "ecddaab70a08abfaff822d7c099c9a2a5758aeb7c48f30c36dcbd6ee7ecddb8b",
+        "setup.py": "4d2b27f4946c4e5d27d555a9a13813ab8034b2127da14797d2f0a3aa485cfe16",
+        "src/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/baselines/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/baselines/full_scan.py": "0cdb3a6c1bbab0a39b582dfb69e7b783cdaf651d26f955ca24e0ce75cfc2fb81",
+        "src/pipeline.py": "4b6d7ebcf51e0e7123ec962dc124bcd535b672a21a8b77a26e9c0862938cf2a0",
+        "src/query/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/query/executor.py": "746bf6e6f441b580815812fb9f817087e278ddf5766d0298d93b705eae1f2155",
+        "src/query/predicate.py": "8ade9d3fedfdbe4948011b3f2b110261eff76d4850d7a306b74d177f7df1363b",
+        "src/query/pushdown.py": "03fbf771158d87c487a27cec9220cf556bd52901a675831c8ea64d18c4c87df6",
+        "src/query/schema.py": "ea6cdc2cb7daf60d82e0d94461a53e83b935c9c9d076174d0b12e10fe6acaeaa",
+        "src/query/sql_parser.py": "da682d0b08318c97e2271521111bb1771a727362002ad00e6e731760b2ea75eb",
+        "src/query/versioning.py": "98bb33a7e5b694a3bd010fdcebbaa9e9d14a52d3df405a6417b690efc3f0a398",
+        "src/replay/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/replay/data_loader.py": "e89d5df7be38a6e2b251f4c60ae04c0f847b473052408c6ede40447fa0e440c3",
+        "src/replay/replay_harness.py": "cec6636dd0393b4fa7707d8a65816199d04a63f3c2fbdc7f7f6d952ecc440c47",
+        "src/store/__init__.py": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+        "src/store/chunk.py": "33da1d1290fee8405556110916bf3e450085d2394b82ca0a5bbc8ab62248d464",
+        "src/store/chunk_boundary.py": "b1e2c832180791e30271d3a35da1af1400dd8e106cb17770944553e31b3a49a5",
+        "src/store/chunk_builder.py": "309c6bb20fe93f080749f10ffe91221d3dfccb4153fd740f1a9d88dbdb8a1a0b",
+        "src/store/chunk_store.py": "34203918c0a5c4885a688591b607e5f736187ce9a3316dd09a8261495c5a454c",
+        "src/store/label.py": "04426e95785a2d4ef303de531325bbd2fd2f24eaca44ebd0ef5ddad2cef85c87",
+        "src/store/validation.py": "3eba9cbe718cfb6c7a66e4063e5a2f8d87332278d0e104ddff6cb9a3adf26b8f"
+      },
+      "sha256": "75259fd76e08b176d05d180eec15bde958223c9f0c3163c2948a3e86ded6769c"
+    },
+    "started_at_utc": "2026-11-11T04:36:26.919177+00:00",
+    "thread_environment": {
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "PYTHONHASHSEED": "0",
+      "VECLIB_MAXIMUM_THREADS": "1"
+    },
+    "timing_scope": "one warm process, perf_counter wall clock; parsing/decompression/filtering included; no fresh-process isolation or significance claims"
+  },
+  "points": [
+    {
+      "acquisition_order": [
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 0
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 0
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 0
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 1
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 1
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 1
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 2
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 2
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 2
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 3
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 3
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 3
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 4
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 4
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 4
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 5
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 5
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 5
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 6
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 6
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 6
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 7
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 7
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 7
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 8
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 8
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 8
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 9
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 9
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 9
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 10
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 10
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 10
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 11
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 11
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 11
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 12
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 12
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 12
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 13
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 13
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 13
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 14
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 14
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 14
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 15
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 15
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 15
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 16
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 16
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 16
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 17
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 17
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 17
+        }
+      ],
+      "aggregate": {
+        "geomean_row_wise_over_pushdown": 44.19033953441154,
+        "mean_chunks_skipped_ratio": 0.9886688668866886,
+        "mean_pushdown_ms": 7.136374987643042,
+        "mean_row_wise_ms": 298.75057298147425,
+        "mean_vectorized_ms": 253.78340485184552,
+        "method": "arithmetic mean of per-query mean latencies; geometric mean of per-query speedups; unweighted over the symbol x window grid",
+        "num_queries": 9,
+        "symbols": [
+          "SYN000003",
+          "SYN000000",
+          "SYN000007"
+        ],
+        "windows": [
+          "3 months",
+          "1 month",
+          "6 months"
+        ]
+      },
+      "avg_rows_per_chunk": 4.96039603960396,
+      "candidate_chunks": 3,
+      "chunks_pruned": 1007,
+      "chunks_skipped_ratio": 0.997029702970297,
+      "fixture": {
+        "columns_and_dtypes": [
+          [
+            "timestamp",
+            "datetime64[ns, UTC]"
+          ],
+          [
+            "symbol",
+            "object"
+          ],
+          [
+            "open",
+            "float64"
+          ],
+          [
+            "high",
+            "float64"
+          ],
+          [
+            "low",
+            "float64"
+          ],
+          [
+            "close",
+            "float64"
+          ],
+          [
+            "volume",
+            "float64"
+          ]
+        ],
+        "method": "sha256(schema JSON + pandas hash_pandas_object ordered rows/index bytes); pandas version recorded in manifest",
+        "rows": 5010,
+        "sha256": "ed563789442a4f73f8437901afc9e082be2aec8f5151802e3dfefecd1b47202a"
+      },
+      "full_scan": {
+        "ci95_high_seconds": 0.29958790714101974,
+        "ci95_low_seconds": 0.299169314636841,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.29937861088893036,
+        "median_latency_seconds": 0.29938734999996086,
+        "raw_latency_samples_seconds": [
+          0.29936429600002157,
+          0.2995300799998404,
+          0.29967194200025915,
+          0.29941040399990015,
+          0.2991916119999587,
+          0.2998111100000642,
+          0.2988337399997363,
+          0.29932991800023956,
+          0.30051661500010596,
+          0.2992031220001081,
+          0.2994395020000411,
+          0.2996637420001207,
+          0.2987171669997224,
+          0.2989487480003845,
+          0.299575601000015,
+          0.2988554349999504,
+          0.29950563900001725,
+          0.2992463230002613
+        ],
+        "retained_sample_count": 15,
+        "row_count": 11,
+        "sample_count": 18,
+        "std_latency_seconds": 0.00042083829136298163,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.2992543552666878,
+        "upper_trimmed_std_seconds": 0.00029411354381473064
+      },
+      "full_scan_row_count": 11,
+      "ingest_seconds": 1.4587307840001813,
+      "key": "weekly",
+      "label": "Weekly",
+      "max_rows_per_chunk": 5,
+      "metadata_size_bytes": 621992,
+      "min_rows_per_chunk": 1,
+      "price_threshold": 399.424601934295,
+      "pushdown_query": {
+        "acquisition_order": [
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 0
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 0
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 0
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 1
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 2
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 2
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 2
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 3
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 4
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 4
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 4
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 5
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 6
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 6
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 6
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 7
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 8
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 8
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 8
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 9
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 10
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 10
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 10
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 11
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 12
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 12
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 12
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 13
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 14
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 14
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 14
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 15
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 16
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 16
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 16
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 17
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 17
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 17
+          }
+        ],
+        "candidate_chunks": 3,
+        "chunks_skipped_ratio": 0.997029702970297,
+        "ci95_high_seconds": 0.005058888786400082,
+        "ci95_low_seconds": 0.0050002302135855265,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.005029559499992804,
+        "median_latency_seconds": 0.005019917000026908,
+        "raw_latency_samples_seconds": [
+          0.004994693999833544,
+          0.005024485999911121,
+          0.0049636329999884765,
+          0.005022388000270439,
+          0.0050900060000458325,
+          0.005063082999640756,
+          0.005030541999985871,
+          0.005056498999692849,
+          0.004987329999948997,
+          0.004977792000318004,
+          0.004984205000255315,
+          0.005051718000231631,
+          0.005011160000321979,
+          0.004979067000022042,
+          0.004977628999768058,
+          0.005094830999951228,
+          0.0050174459997833765,
+          0.005205561999900965
+        ],
+        "requested_trials": 18,
+        "retained_sample_count": 15,
+        "row_count": 11,
+        "sample_count": 18,
+        "std_latency_seconds": 5.897328143871695e-05,
+        "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+        "total_chunks": 1010,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.005009444799998164,
+        "upper_trimmed_std_seconds": 3.180674828950938e-05,
+        "vectorized_full_scan": {
+          "ci95_high_seconds": 0.25405780586193255,
+          "ci95_low_seconds": 0.2536230791380682,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.2538404425000004,
+          "median_latency_seconds": 0.2536707840001782,
+          "raw_latency_samples_seconds": [
+            0.2551175799999328,
+            0.25368649700021706,
+            0.2542447380001249,
+            0.25355796799976815,
+            0.2540402159997939,
+            0.2536224469999979,
+            0.25328845800004274,
+            0.25358324399985577,
+            0.2537609500000144,
+            0.2536544680001498,
+            0.25418911799988564,
+            0.25423081900044053,
+            0.25344617999962793,
+            0.25354148899987194,
+            0.2542348540000603,
+            0.2536550710001393,
+            0.25380812200000946,
+            0.25346574600007443
+          ],
+          "retained_sample_count": 15,
+          "row_count": 11,
+          "sample_count": 18,
+          "std_latency_seconds": 0.00043705907261734145,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.25370205286665926,
+          "upper_trimmed_std_seconds": 0.00026859155455460367
+        },
+        "vectorized_full_scan_speedup": 50.46971658260799
+      },
+      "queries": [
+        {
+          "candidate_chunks": 3,
+          "chunks_skipped_ratio": 0.997029702970297,
+          "is_primary": true,
+          "price_threshold": 399.424601934295,
+          "pushdown_mean_ms": 5.029559499992804,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+          "row_count": 11,
+          "row_wise_mean_ms": 299.3786108889304,
+          "row_wise_over_pushdown": 59.52382328698143,
+          "sample_count": 18,
+          "symbol": "SYN000003",
+          "vectorized_mean_ms": 253.84044250000036,
+          "vectorized_over_pushdown": 50.46971658260799,
+          "window": "3 months"
+        },
+        {
+          "candidate_chunks": 1,
+          "chunks_skipped_ratio": 0.999009900990099,
+          "is_primary": false,
+          "price_threshold": 399.424601934295,
+          "pushdown_mean_ms": 4.326303444486257,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-06-01' AND timestamp < '2023-07-01'",
+          "row_count": 4,
+          "row_wise_mean_ms": 298.89237799999233,
+          "row_wise_over_pushdown": 69.08724314770885,
+          "sample_count": 18,
+          "symbol": "SYN000003",
+          "vectorized_mean_ms": 253.94388949995218,
+          "vectorized_over_pushdown": 58.69766019847636,
+          "window": "1 month"
+        },
+        {
+          "candidate_chunks": 7,
+          "chunks_skipped_ratio": 0.9930693069306931,
+          "is_primary": false,
+          "price_threshold": 399.424601934295,
+          "pushdown_mean_ms": 6.113847000000937,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-04-01' AND timestamp < '2023-10-01'",
+          "row_count": 32,
+          "row_wise_mean_ms": 299.4458037777703,
+          "row_wise_over_pushdown": 48.978295298806856,
+          "sample_count": 18,
+          "symbol": "SYN000003",
+          "vectorized_mean_ms": 253.61143800003245,
+          "vectorized_over_pushdown": 41.48148260824871,
+          "window": "6 months"
+        },
+        {
+          "candidate_chunks": 14,
+          "chunks_skipped_ratio": 0.9861386138613861,
+          "is_primary": false,
+          "price_threshold": 165.96262974017864,
+          "pushdown_mean_ms": 7.772454166595505,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000000' AND close > 165.9626 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+          "row_count": 66,
+          "row_wise_mean_ms": 298.19825594444814,
+          "row_wise_over_pushdown": 38.3660359460267,
+          "sample_count": 18,
+          "symbol": "SYN000000",
+          "vectorized_mean_ms": 253.71689677773347,
+          "vectorized_over_pushdown": 32.64308689887928,
+          "window": "3 months"
+        },
+        {
+          "candidate_chunks": 5,
+          "chunks_skipped_ratio": 0.995049504950495,
+          "is_primary": false,
+          "price_threshold": 165.96262974017864,
+          "pushdown_mean_ms": 5.371790444441003,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000000' AND close > 165.9626 AND timestamp >= '2023-06-01' AND timestamp < '2023-07-01'",
+          "row_count": 22,
+          "row_wise_mean_ms": 298.3934385555231,
+          "row_wise_over_pushdown": 55.54822766109866,
+          "sample_count": 18,
+          "symbol": "SYN000000",
+          "vectorized_mean_ms": 253.67646505560515,
+          "vectorized_over_pushdown": 47.22382000551087,
+          "window": "1 month"
+        },
+        {
+          "candidate_chunks": 27,
+          "chunks_skipped_ratio": 0.9732673267326732,
+          "is_primary": false,
+          "price_threshold": 165.96262974017864,
+          "pushdown_mean_ms": 11.16294022222064,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000000' AND close > 165.9626 AND timestamp >= '2023-04-01' AND timestamp < '2023-10-01'",
+          "row_count": 130,
+          "row_wise_mean_ms": 298.85784311111115,
+          "row_wise_over_pushdown": 26.77232316591761,
+          "sample_count": 18,
+          "symbol": "SYN000000",
+          "vectorized_mean_ms": 253.75537927778979,
+          "vectorized_over_pushdown": 22.731948234630096,
+          "window": "6 months"
+        },
+        {
+          "candidate_chunks": 14,
+          "chunks_skipped_ratio": 0.9861386138613861,
+          "is_primary": false,
+          "price_threshold": 252.8888369907759,
+          "pushdown_mean_ms": 7.8013880554155755,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000007' AND close > 252.8888 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+          "row_count": 66,
+          "row_wise_mean_ms": 298.6379884443977,
+          "row_wise_over_pushdown": 38.28010942707675,
+          "sample_count": 18,
+          "symbol": "SYN000007",
+          "vectorized_mean_ms": 253.9087974999903,
+          "vectorized_over_pushdown": 32.54661807570662,
+          "window": "3 months"
+        },
+        {
+          "candidate_chunks": 5,
+          "chunks_skipped_ratio": 0.995049504950495,
+          "is_primary": false,
+          "price_threshold": 252.8888369907759,
+          "pushdown_mean_ms": 5.441705333345857,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000007' AND close > 252.8888 AND timestamp >= '2023-06-01' AND timestamp < '2023-07-01'",
+          "row_count": 22,
+          "row_wise_mean_ms": 298.17898744444295,
+          "row_wise_over_pushdown": 54.79513666740684,
+          "sample_count": 18,
+          "symbol": "SYN000007",
+          "vectorized_mean_ms": 253.68460633328343,
+          "vectorized_over_pushdown": 46.618585680989874,
+          "window": "1 month"
+        },
+        {
+          "candidate_chunks": 27,
+          "chunks_skipped_ratio": 0.9732673267326732,
+          "is_primary": false,
+          "price_threshold": 252.8888369907759,
+          "pushdown_mean_ms": 11.2073867222888,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000007' AND close > 252.8888 AND timestamp >= '2023-04-01' AND timestamp < '2023-10-01'",
+          "row_count": 130,
+          "row_wise_mean_ms": 298.77185066665237,
+          "row_wise_over_pushdown": 26.65847606315457,
+          "sample_count": 18,
+          "symbol": "SYN000007",
+          "vectorized_mean_ms": 253.91272872222243,
+          "vectorized_over_pushdown": 22.655837173642894,
+          "window": "6 months"
+        }
+      ],
+      "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+      "query_full_scan_ci95_high_ms": 299.58790714101974,
+      "query_full_scan_ci95_low_ms": 299.16931463684097,
+      "query_full_scan_mean_ms": 299.3786108889304,
+      "query_num_trials": 18,
+      "query_pushdown_ci95_high_ms": 5.058888786400082,
+      "query_pushdown_ci95_low_ms": 5.000230213585526,
+      "query_pushdown_mean_ms": 5.029559499992804,
+      "query_requested_trials": 18,
+      "query_speedup": 59.52382328698143,
+      "query_warmup": 3,
+      "row_count": 11,
+      "rows_scanned": 15,
+      "synthetic_seed": 1,
+      "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+      "total_chunks": 1010,
+      "total_rows": 5010,
+      "vectorized_full_scan": {
+        "ci95_high_seconds": 0.25405780586193255,
+        "ci95_low_seconds": 0.2536230791380682,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.2538404425000004,
+        "median_latency_seconds": 0.2536707840001782,
+        "raw_latency_samples_seconds": [
+          0.2551175799999328,
+          0.25368649700021706,
+          0.2542447380001249,
+          0.25355796799976815,
+          0.2540402159997939,
+          0.2536224469999979,
+          0.25328845800004274,
+          0.25358324399985577,
+          0.2537609500000144,
+          0.2536544680001498,
+          0.25418911799988564,
+          0.25423081900044053,
+          0.25344617999962793,
+          0.25354148899987194,
+          0.2542348540000603,
+          0.2536550710001393,
+          0.25380812200000946,
+          0.25346574600007443
+        ],
+        "retained_sample_count": 15,
+        "row_count": 11,
+        "sample_count": 18,
+        "std_latency_seconds": 0.00043705907261734145,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.25370205286665926,
+        "upper_trimmed_std_seconds": 0.00026859155455460367
+      },
+      "vectorized_full_scan_speedup": 50.46971658260799,
+      "window": "7 days"
+    },
+    {
+      "acquisition_order": [
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 0
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 0
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 0
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 1
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 1
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 1
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 2
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 2
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 2
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 3
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 3
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 3
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 4
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 4
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 4
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 5
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 5
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 5
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 6
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 6
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 6
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 7
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 7
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 7
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 8
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 8
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 8
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 9
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 9
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 9
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 10
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 10
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 10
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 11
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 11
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 11
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 12
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 12
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 12
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 13
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 13
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 13
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 14
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 14
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 14
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 15
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 15
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 15
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 16
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 16
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 16
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 17
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 17
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 17
+        }
+      ],
+      "aggregate": {
+        "geomean_row_wise_over_pushdown": 30.547709640088257,
+        "mean_chunks_skipped_ratio": 0.987962962962963,
+        "mean_pushdown_ms": 3.738404030869271,
+        "mean_row_wise_ms": 112.80397332717695,
+        "mean_vectorized_ms": 67.76450875923605,
+        "method": "arithmetic mean of per-query mean latencies; geometric mean of per-query speedups; unweighted over the symbol x window grid",
+        "num_queries": 9,
+        "symbols": [
+          "SYN000003",
+          "SYN000000",
+          "SYN000007"
+        ],
+        "windows": [
+          "3 months",
+          "1 month",
+          "6 months"
+        ]
+      },
+      "avg_rows_per_chunk": 20.875,
+      "candidate_chunks": 2,
+      "chunks_pruned": 238,
+      "chunks_skipped_ratio": 0.9916666666666667,
+      "fixture": {
+        "columns_and_dtypes": [
+          [
+            "timestamp",
+            "datetime64[ns, UTC]"
+          ],
+          [
+            "symbol",
+            "object"
+          ],
+          [
+            "open",
+            "float64"
+          ],
+          [
+            "high",
+            "float64"
+          ],
+          [
+            "low",
+            "float64"
+          ],
+          [
+            "close",
+            "float64"
+          ],
+          [
+            "volume",
+            "float64"
+          ]
+        ],
+        "method": "sha256(schema JSON + pandas hash_pandas_object ordered rows/index bytes); pandas version recorded in manifest",
+        "rows": 5010,
+        "sha256": "ed563789442a4f73f8437901afc9e082be2aec8f5151802e3dfefecd1b47202a"
+      },
+      "full_scan": {
+        "ci95_high_seconds": 0.11358612045347456,
+        "ci95_low_seconds": 0.113359557991059,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.11347283922226678,
+        "median_latency_seconds": 0.11347339500002818,
+        "raw_latency_samples_seconds": [
+          0.1134718379998958,
+          0.11386798600005932,
+          0.1135060040001008,
+          0.11309498499986148,
+          0.11333290800030227,
+          0.11350024800003666,
+          0.1132623909998074,
+          0.11328942599993752,
+          0.11340577800001483,
+          0.11347495200016056,
+          0.11341819400013264,
+          0.11370699100007187,
+          0.11333497199984777,
+          0.11378174500032401,
+          0.1138262700001178,
+          0.11308674900010374,
+          0.11365294100005485,
+          0.11349672799997279
+        ],
+        "retained_sample_count": 15,
+        "row_count": 11,
+        "sample_count": 18,
+        "std_latency_seconds": 0.00022777799081001332,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.1134023403333534,
+        "upper_trimmed_std_seconds": 0.00017545437993493295
+      },
+      "full_scan_row_count": 11,
+      "ingest_seconds": 1.3731026669997846,
+      "key": "monthly",
+      "label": "Monthly",
+      "max_rows_per_chunk": 23,
+      "metadata_size_bytes": 148292,
+      "min_rows_per_chunk": 2,
+      "price_threshold": 399.424601934295,
+      "pushdown_query": {
+        "acquisition_order": [
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 0
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 0
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 0
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 1
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 2
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 2
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 2
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 3
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 4
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 4
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 4
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 5
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 6
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 6
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 6
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 7
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 8
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 8
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 8
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 9
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 10
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 10
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 10
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 11
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 12
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 12
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 12
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 13
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 14
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 14
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 14
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 15
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 16
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 16
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 16
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 17
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 17
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 17
+          }
+        ],
+        "candidate_chunks": 2,
+        "chunks_skipped_ratio": 0.9916666666666667,
+        "ci95_high_seconds": 0.003652181581314428,
+        "ci95_low_seconds": 0.003622977863249316,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.003637579722281872,
+        "median_latency_seconds": 0.003629927000247335,
+        "raw_latency_samples_seconds": [
+          0.003619381999669713,
+          0.0036327470002106566,
+          0.0036339750004117377,
+          0.003620509000029415,
+          0.0036570280003616062,
+          0.003700189000028331,
+          0.003603491999911057,
+          0.0036395229999470757,
+          0.003612771000007342,
+          0.0035925440001847164,
+          0.0036271070002840133,
+          0.003665148000436602,
+          0.0036831150000580237,
+          0.00362053399976503,
+          0.003681438000057824,
+          0.003615455999806727,
+          0.0036465680000219436,
+          0.0036249089998818818
+        ],
+        "requested_trials": 18,
+        "retained_sample_count": 15,
+        "row_count": 11,
+        "sample_count": 18,
+        "std_latency_seconds": 2.9360398691517395e-05,
+        "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+        "total_chunks": 240,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.0036274462000619677,
+        "upper_trimmed_std_seconds": 1.9267488145737835e-05,
+        "vectorized_full_scan": {
+          "ci95_high_seconds": 0.06776099225526225,
+          "ci95_low_seconds": 0.06766805974462406,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.06771452599994315,
+          "median_latency_seconds": 0.06774260399993182,
+          "raw_latency_samples_seconds": [
+            0.06767674599996099,
+            0.06757225999990624,
+            0.06773421899970344,
+            0.06770108899991101,
+            0.06780732200013517,
+            0.06775098900016019,
+            0.06761931299979551,
+            0.06765626900005373,
+            0.0675706080000964,
+            0.06785805000026812,
+            0.06779580400007035,
+            0.06756382599996869,
+            0.06776840899965464,
+            0.06775690799986478,
+            0.06779265499972098,
+            0.06763401599982899,
+            0.06778246800013221,
+            0.06782051699974545
+          ],
+          "retained_sample_count": 15,
+          "row_count": 11,
+          "sample_count": 18,
+          "std_latency_seconds": 9.34311020828718e-05,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.06769170526658855,
+          "upper_trimmed_std_seconds": 8.457591171608447e-05
+        },
+        "vectorized_full_scan_speedup": 18.615269264109898
+      },
+      "queries": [
+        {
+          "candidate_chunks": 2,
+          "chunks_skipped_ratio": 0.9916666666666667,
+          "is_primary": true,
+          "price_threshold": 399.424601934295,
+          "pushdown_mean_ms": 3.637579722281872,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+          "row_count": 11,
+          "row_wise_mean_ms": 113.47283922226678,
+          "row_wise_over_pushdown": 31.19459857530894,
+          "sample_count": 18,
+          "symbol": "SYN000003",
+          "vectorized_mean_ms": 67.71452599994315,
+          "vectorized_over_pushdown": 18.615269264109898,
+          "window": "3 months"
+        },
+        {
+          "candidate_chunks": 1,
+          "chunks_skipped_ratio": 0.9958333333333333,
+          "is_primary": false,
+          "price_threshold": 399.424601934295,
+          "pushdown_mean_ms": 3.2077659444793323,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-06-01' AND timestamp < '2023-07-01'",
+          "row_count": 4,
+          "row_wise_mean_ms": 113.44634688887506,
+          "row_wise_over_pushdown": 35.36615477950311,
+          "sample_count": 18,
+          "symbol": "SYN000003",
+          "vectorized_mean_ms": 67.77595716665827,
+          "vectorized_over_pushdown": 21.128710242498475,
+          "window": "1 month"
+        },
+        {
+          "candidate_chunks": 3,
+          "chunks_skipped_ratio": 0.9875,
+          "is_primary": false,
+          "price_threshold": 399.424601934295,
+          "pushdown_mean_ms": 3.9503536666466563,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-04-01' AND timestamp < '2023-10-01'",
+          "row_count": 32,
+          "row_wise_mean_ms": 113.67642877783307,
+          "row_wise_over_pushdown": 28.776266220824166,
+          "sample_count": 18,
+          "symbol": "SYN000003",
+          "vectorized_mean_ms": 67.78109650003393,
+          "vectorized_over_pushdown": 17.15823498850709,
+          "window": "6 months"
+        },
+        {
+          "candidate_chunks": 3,
+          "chunks_skipped_ratio": 0.9875,
+          "is_primary": false,
+          "price_threshold": 165.96262974017864,
+          "pushdown_mean_ms": 3.739672833287639,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000000' AND close > 165.9626 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+          "row_count": 66,
+          "row_wise_mean_ms": 112.29698916662932,
+          "row_wise_over_pushdown": 30.028559762514377,
+          "sample_count": 18,
+          "symbol": "SYN000000",
+          "vectorized_mean_ms": 67.76148672219682,
+          "vectorized_over_pushdown": 18.119629642207506,
+          "window": "3 months"
+        },
+        {
+          "candidate_chunks": 1,
+          "chunks_skipped_ratio": 0.9958333333333333,
+          "is_primary": false,
+          "price_threshold": 165.96262974017864,
+          "pushdown_mean_ms": 2.9829868888858377,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000000' AND close > 165.9626 AND timestamp >= '2023-06-01' AND timestamp < '2023-07-01'",
+          "row_count": 22,
+          "row_wise_mean_ms": 112.2172389999984,
+          "row_wise_over_pushdown": 37.61908556088631,
+          "sample_count": 18,
+          "symbol": "SYN000000",
+          "vectorized_mean_ms": 67.74952994444699,
+          "vectorized_over_pushdown": 22.71197711155607,
+          "window": "1 month"
+        },
+        {
+          "candidate_chunks": 6,
+          "chunks_skipped_ratio": 0.975,
+          "is_primary": false,
+          "price_threshold": 165.96262974017864,
+          "pushdown_mean_ms": 4.632567888898444,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000000' AND close > 165.9626 AND timestamp >= '2023-04-01' AND timestamp < '2023-10-01'",
+          "row_count": 130,
+          "row_wise_mean_ms": 112.7589148333704,
+          "row_wise_over_pushdown": 24.340477579095516,
+          "sample_count": 18,
+          "symbol": "SYN000000",
+          "vectorized_mean_ms": 67.75936272219951,
+          "vectorized_over_pushdown": 14.626739283104536,
+          "window": "6 months"
+        },
+        {
+          "candidate_chunks": 3,
+          "chunks_skipped_ratio": 0.9875,
+          "is_primary": false,
+          "price_threshold": 252.8888369907759,
+          "pushdown_mean_ms": 3.784124388883154,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000007' AND close > 252.8888 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+          "row_count": 66,
+          "row_wise_mean_ms": 112.24314361119367,
+          "row_wise_over_pushdown": 29.661589333832946,
+          "sample_count": 18,
+          "symbol": "SYN000007",
+          "vectorized_mean_ms": 67.75270222215113,
+          "vectorized_over_pushdown": 17.904459594719523,
+          "window": "3 months"
+        },
+        {
+          "candidate_chunks": 1,
+          "chunks_skipped_ratio": 0.9958333333333333,
+          "is_primary": false,
+          "price_threshold": 252.8888369907759,
+          "pushdown_mean_ms": 3.018193444505515,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000007' AND close > 252.8888 AND timestamp >= '2023-06-01' AND timestamp < '2023-07-01'",
+          "row_count": 22,
+          "row_wise_mean_ms": 112.332934722215,
+          "row_wise_over_pushdown": 37.21860006246851,
+          "sample_count": 18,
+          "symbol": "SYN000007",
+          "vectorized_mean_ms": 67.80546505554715,
+          "vectorized_over_pushdown": 22.46557959331067,
+          "window": "1 month"
+        },
+        {
+          "candidate_chunks": 6,
+          "chunks_skipped_ratio": 0.975,
+          "is_primary": false,
+          "price_threshold": 252.8888369907759,
+          "pushdown_mean_ms": 4.69239149995499,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000007' AND close > 252.8888 AND timestamp >= '2023-04-01' AND timestamp < '2023-10-01'",
+          "row_count": 130,
+          "row_wise_mean_ms": 112.79092372221082,
+          "row_wise_over_pushdown": 24.03698065757998,
+          "sample_count": 18,
+          "symbol": "SYN000007",
+          "vectorized_mean_ms": 67.78045249994749,
+          "vectorized_over_pushdown": 14.444756474517876,
+          "window": "6 months"
+        }
+      ],
+      "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+      "query_full_scan_ci95_high_ms": 113.58612045347456,
+      "query_full_scan_ci95_low_ms": 113.35955799105899,
+      "query_full_scan_mean_ms": 113.47283922226678,
+      "query_num_trials": 18,
+      "query_pushdown_ci95_high_ms": 3.652181581314428,
+      "query_pushdown_ci95_low_ms": 3.622977863249316,
+      "query_pushdown_mean_ms": 3.637579722281872,
+      "query_requested_trials": 18,
+      "query_speedup": 31.19459857530894,
+      "query_warmup": 3,
+      "row_count": 11,
+      "rows_scanned": 45,
+      "synthetic_seed": 1,
+      "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+      "total_chunks": 240,
+      "total_rows": 5010,
+      "vectorized_full_scan": {
+        "ci95_high_seconds": 0.06776099225526225,
+        "ci95_low_seconds": 0.06766805974462406,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.06771452599994315,
+        "median_latency_seconds": 0.06774260399993182,
+        "raw_latency_samples_seconds": [
+          0.06767674599996099,
+          0.06757225999990624,
+          0.06773421899970344,
+          0.06770108899991101,
+          0.06780732200013517,
+          0.06775098900016019,
+          0.06761931299979551,
+          0.06765626900005373,
+          0.0675706080000964,
+          0.06785805000026812,
+          0.06779580400007035,
+          0.06756382599996869,
+          0.06776840899965464,
+          0.06775690799986478,
+          0.06779265499972098,
+          0.06763401599982899,
+          0.06778246800013221,
+          0.06782051699974545
+        ],
+        "retained_sample_count": 15,
+        "row_count": 11,
+        "sample_count": 18,
+        "std_latency_seconds": 9.34311020828718e-05,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.06769170526658855,
+        "upper_trimmed_std_seconds": 8.457591171608447e-05
+      },
+      "vectorized_full_scan_speedup": 18.615269264109898,
+      "window": "1 calendar month"
+    },
+    {
+      "acquisition_order": [
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 0
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 0
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 0
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 1
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 1
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 1
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 2
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 2
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 2
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 3
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 3
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 3
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 4
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 4
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 4
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 5
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 5
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 5
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 6
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 6
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 6
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 7
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 7
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 7
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 8
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 8
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 8
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 9
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 9
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 9
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 10
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 10
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 10
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 11
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 11
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 11
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 12
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 12
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 12
+        },
+        {
+          "engine": "full_scan",
+          "position": 0,
+          "round": 13
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 13
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 13
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 14
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 14
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 2,
+          "round": 14
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 0,
+          "round": 15
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 1,
+          "round": 15
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 15
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 16
+        },
+        {
+          "engine": "full_scan",
+          "position": 1,
+          "round": 16
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 2,
+          "round": 16
+        },
+        {
+          "engine": "pushdown_query",
+          "position": 0,
+          "round": 17
+        },
+        {
+          "engine": "vectorized_full_scan",
+          "position": 1,
+          "round": 17
+        },
+        {
+          "engine": "full_scan",
+          "position": 2,
+          "round": 17
+        }
+      ],
+      "aggregate": {
+        "geomean_row_wise_over_pushdown": 22.561283413681625,
+        "mean_chunks_skipped_ratio": 0.9791666666666666,
+        "mean_pushdown_ms": 3.293457425927022,
+        "mean_row_wise_ms": 74.14147886418135,
+        "mean_vectorized_ms": 29.091830320991036,
+        "method": "arithmetic mean of per-query mean latencies; geometric mean of per-query speedups; unweighted over the symbol x window grid",
+        "num_queries": 9,
+        "symbols": [
+          "SYN000003",
+          "SYN000000",
+          "SYN000007"
+        ],
+        "windows": [
+          "3 months",
+          "1 month",
+          "6 months"
+        ]
+      },
+      "avg_rows_per_chunk": 62.625,
+      "candidate_chunks": 2,
+      "chunks_pruned": 78,
+      "chunks_skipped_ratio": 0.975,
+      "fixture": {
+        "columns_and_dtypes": [
+          [
+            "timestamp",
+            "datetime64[ns, UTC]"
+          ],
+          [
+            "symbol",
+            "object"
+          ],
+          [
+            "open",
+            "float64"
+          ],
+          [
+            "high",
+            "float64"
+          ],
+          [
+            "low",
+            "float64"
+          ],
+          [
+            "close",
+            "float64"
+          ],
+          [
+            "volume",
+            "float64"
+          ]
+        ],
+        "method": "sha256(schema JSON + pandas hash_pandas_object ordered rows/index bytes); pandas version recorded in manifest",
+        "rows": 5010,
+        "sha256": "ed563789442a4f73f8437901afc9e082be2aec8f5151802e3dfefecd1b47202a"
+      },
+      "full_scan": {
+        "ci95_high_seconds": 0.07500142025687336,
+        "ci95_low_seconds": 0.07478077474314583,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.07489109750000959,
+        "median_latency_seconds": 0.07492060899994613,
+        "raw_latency_samples_seconds": [
+          0.07477946400013025,
+          0.07490039999993314,
+          0.07507028000009086,
+          0.07519686800014824,
+          0.0751602919999641,
+          0.0749520429999393,
+          0.07519391300002098,
+          0.07490302999985943,
+          0.07451198799981285,
+          0.07502922000003309,
+          0.07496426599982442,
+          0.07460389300013048,
+          0.07493818800003282,
+          0.07515237200004776,
+          0.07475498000030711,
+          0.07470152799987773,
+          0.07463191900023958,
+          0.07459511099978045
+        ],
+        "retained_sample_count": 15,
+        "row_count": 11,
+        "sample_count": 18,
+        "std_latency_seconds": 0.00022182929714946128,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.07483257880000262,
+        "upper_trimmed_std_seconds": 0.00019411244014919823
+      },
+      "full_scan_row_count": 11,
+      "ingest_seconds": 1.3861490630001754,
+      "key": "quarterly",
+      "label": "Quarterly",
+      "max_rows_per_chunk": 65,
+      "metadata_size_bytes": 49412,
+      "min_rows_per_chunk": 47,
+      "price_threshold": 399.424601934295,
+      "pushdown_query": {
+        "acquisition_order": [
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 0
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 0
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 0
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 1
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 1
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 2
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 2
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 2
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 3
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 3
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 4
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 4
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 4
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 5
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 5
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 6
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 6
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 6
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 7
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 7
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 8
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 8
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 8
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 9
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 9
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 10
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 10
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 10
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 11
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 11
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 12
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 12
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 12
+          },
+          {
+            "engine": "full_scan",
+            "position": 0,
+            "round": 13
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 13
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 14
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 14
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 2,
+            "round": 14
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 0,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 1,
+            "round": 15
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 15
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 16
+          },
+          {
+            "engine": "full_scan",
+            "position": 1,
+            "round": 16
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 2,
+            "round": 16
+          },
+          {
+            "engine": "pushdown_query",
+            "position": 0,
+            "round": 17
+          },
+          {
+            "engine": "vectorized_full_scan",
+            "position": 1,
+            "round": 17
+          },
+          {
+            "engine": "full_scan",
+            "position": 2,
+            "round": 17
+          }
+        ],
+        "candidate_chunks": 2,
+        "chunks_skipped_ratio": 0.975,
+        "ci95_high_seconds": 0.003496748810620891,
+        "ci95_low_seconds": 0.0034642125227132346,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.003480480666667063,
+        "median_latency_seconds": 0.0034722610000699206,
+        "raw_latency_samples_seconds": [
+          0.0034401610000713845,
+          0.0035430809998615587,
+          0.0035092709999844374,
+          0.0034351879999121593,
+          0.0034746930000437715,
+          0.003458808999766916,
+          0.003453925000030722,
+          0.0035255479997431394,
+          0.003509102000407438,
+          0.003496832000109862,
+          0.0034626500000740634,
+          0.0034698290000960696,
+          0.0034557320000203617,
+          0.0034365380001872836,
+          0.0035014879999835102,
+          0.0035015349999412138,
+          0.003514440999879298,
+          0.0034598289998939435
+        ],
+        "requested_trials": 18,
+        "retained_sample_count": 15,
+        "row_count": 11,
+        "sample_count": 18,
+        "std_latency_seconds": 3.271084807697904e-05,
+        "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+        "total_chunks": 80,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.0034710388000348757,
+        "upper_trimmed_std_seconds": 2.6389377938211062e-05,
+        "vectorized_full_scan": {
+          "ci95_high_seconds": 0.02906634473766819,
+          "ci95_low_seconds": 0.02900875915115069,
+          "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+          "mean_latency_seconds": 0.02903755194440944,
+          "median_latency_seconds": 0.029045565000160423,
+          "raw_latency_samples_seconds": [
+            0.029040225999779068,
+            0.02904784100019242,
+            0.029021835000094143,
+            0.02899987399996462,
+            0.029043289000128425,
+            0.029093050000028597,
+            0.02906204099963361,
+            0.029002767999827483,
+            0.028998992999731854,
+            0.029138853999938874,
+            0.028916795999975875,
+            0.0290815289999955,
+            0.029100286999891978,
+            0.02905607799993959,
+            0.029099070000029315,
+            0.028970920000119804,
+            0.029059864000373636,
+            0.02894261999972514
+          ],
+          "retained_sample_count": 15,
+          "row_count": 11,
+          "sample_count": 18,
+          "std_latency_seconds": 5.789453847174962e-05,
+          "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+          "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+          "upper_trim_fraction": 0.15,
+          "upper_trimmed_mean_seconds": 0.02902251493330065,
+          "upper_trimmed_std_seconds": 5.043119682734934e-05
+        },
+        "vectorized_full_scan_speedup": 8.342971768958579
+      },
+      "queries": [
+        {
+          "candidate_chunks": 2,
+          "chunks_skipped_ratio": 0.975,
+          "is_primary": true,
+          "price_threshold": 399.424601934295,
+          "pushdown_mean_ms": 3.480480666667063,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+          "row_count": 11,
+          "row_wise_mean_ms": 74.8910975000096,
+          "row_wise_over_pushdown": 21.51745826869538,
+          "sample_count": 18,
+          "symbol": "SYN000003",
+          "vectorized_mean_ms": 29.03755194440944,
+          "vectorized_over_pushdown": 8.342971768958579,
+          "window": "3 months"
+        },
+        {
+          "candidate_chunks": 1,
+          "chunks_skipped_ratio": 0.9875,
+          "is_primary": false,
+          "price_threshold": 399.424601934295,
+          "pushdown_mean_ms": 3.008463611094056,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-06-01' AND timestamp < '2023-07-01'",
+          "row_count": 4,
+          "row_wise_mean_ms": 74.9187046110617,
+          "row_wise_over_pushdown": 24.90264609975349,
+          "sample_count": 18,
+          "symbol": "SYN000003",
+          "vectorized_mean_ms": 29.058879055557757,
+          "vectorized_over_pushdown": 9.659042890995853,
+          "window": "1 month"
+        },
+        {
+          "candidate_chunks": 2,
+          "chunks_skipped_ratio": 0.975,
+          "is_primary": false,
+          "price_threshold": 399.424601934295,
+          "pushdown_mean_ms": 3.4912780555613505,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-04-01' AND timestamp < '2023-10-01'",
+          "row_count": 32,
+          "row_wise_mean_ms": 74.93788927783702,
+          "row_wise_over_pushdown": 21.464314238296325,
+          "sample_count": 18,
+          "symbol": "SYN000003",
+          "vectorized_mean_ms": 29.04191805555456,
+          "vectorized_over_pushdown": 8.318420244211975,
+          "window": "6 months"
+        },
+        {
+          "candidate_chunks": 2,
+          "chunks_skipped_ratio": 0.975,
+          "is_primary": false,
+          "price_threshold": 165.96262974017864,
+          "pushdown_mean_ms": 3.4635743333587423,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000000' AND close > 165.9626 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+          "row_count": 66,
+          "row_wise_mean_ms": 73.71008066666542,
+          "row_wise_over_pushdown": 21.28150678238406,
+          "sample_count": 18,
+          "symbol": "SYN000000",
+          "vectorized_mean_ms": 29.046213833326973,
+          "vectorized_over_pushdown": 8.38619617704578,
+          "window": "3 months"
+        },
+        {
+          "candidate_chunks": 1,
+          "chunks_skipped_ratio": 0.9875,
+          "is_primary": false,
+          "price_threshold": 165.96262974017864,
+          "pushdown_mean_ms": 2.9584305555595667,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000000' AND close > 165.9626 AND timestamp >= '2023-06-01' AND timestamp < '2023-07-01'",
+          "row_count": 22,
+          "row_wise_mean_ms": 73.71678116664447,
+          "row_wise_over_pushdown": 24.917529677387154,
+          "sample_count": 18,
+          "symbol": "SYN000000",
+          "vectorized_mean_ms": 29.092144944494674,
+          "vectorized_over_pushdown": 9.83364131695567,
+          "window": "1 month"
+        },
+        {
+          "candidate_chunks": 2,
+          "chunks_skipped_ratio": 0.975,
+          "is_primary": false,
+          "price_threshold": 165.96262974017864,
+          "pushdown_mean_ms": 3.3501653333587456,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000000' AND close > 165.9626 AND timestamp >= '2023-04-01' AND timestamp < '2023-10-01'",
+          "row_count": 130,
+          "row_wise_mean_ms": 74.00553699992291,
+          "row_wise_over_pushdown": 22.090114855832454,
+          "sample_count": 18,
+          "symbol": "SYN000000",
+          "vectorized_mean_ms": 29.13066472218715,
+          "vectorized_over_pushdown": 8.695291671764114,
+          "window": "6 months"
+        },
+        {
+          "candidate_chunks": 2,
+          "chunks_skipped_ratio": 0.975,
+          "is_primary": false,
+          "price_threshold": 252.8888369907759,
+          "pushdown_mean_ms": 3.508276333301789,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000007' AND close > 252.8888 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+          "row_count": 66,
+          "row_wise_mean_ms": 73.41805505552657,
+          "row_wise_over_pushdown": 20.92710153947015,
+          "sample_count": 18,
+          "symbol": "SYN000007",
+          "vectorized_mean_ms": 29.15876800001469,
+          "vectorized_over_pushdown": 8.311422826996106,
+          "window": "3 months"
+        },
+        {
+          "candidate_chunks": 1,
+          "chunks_skipped_ratio": 0.9875,
+          "is_primary": false,
+          "price_threshold": 252.8888369907759,
+          "pushdown_mean_ms": 3.0228442222374317,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000007' AND close > 252.8888 AND timestamp >= '2023-06-01' AND timestamp < '2023-07-01'",
+          "row_count": 22,
+          "row_wise_mean_ms": 73.63044999995812,
+          "row_wise_over_pushdown": 24.358003451947233,
+          "sample_count": 18,
+          "symbol": "SYN000007",
+          "vectorized_mean_ms": 29.171560777791054,
+          "vectorized_over_pushdown": 9.650368538078027,
+          "window": "1 month"
+        },
+        {
+          "candidate_chunks": 2,
+          "chunks_skipped_ratio": 0.975,
+          "is_primary": false,
+          "price_threshold": 252.8888369907759,
+          "pushdown_mean_ms": 3.357603722204456,
+          "query": "SELECT * FROM data WHERE symbol = 'SYN000007' AND close > 252.8888 AND timestamp >= '2023-04-01' AND timestamp < '2023-10-01'",
+          "row_count": 130,
+          "row_wise_mean_ms": 74.0447145000063,
+          "row_wise_over_pushdown": 22.052845012749682,
+          "sample_count": 18,
+          "symbol": "SYN000007",
+          "vectorized_mean_ms": 29.088771555583055,
+          "vectorized_over_pushdown": 8.66355114012223,
+          "window": "6 months"
+        }
+      ],
+      "query": "SELECT * FROM data WHERE symbol = 'SYN000003' AND close > 399.4246 AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'",
+      "query_full_scan_ci95_high_ms": 75.00142025687336,
+      "query_full_scan_ci95_low_ms": 74.78077474314583,
+      "query_full_scan_mean_ms": 74.8910975000096,
+      "query_num_trials": 18,
+      "query_pushdown_ci95_high_ms": 3.496748810620891,
+      "query_pushdown_ci95_low_ms": 3.4642125227132348,
+      "query_pushdown_mean_ms": 3.480480666667063,
+      "query_requested_trials": 18,
+      "query_speedup": 21.51745826869538,
+      "query_warmup": 3,
+      "row_count": 11,
+      "rows_scanned": 130,
+      "synthetic_seed": 1,
+      "timing_method": "interleaved paired rounds; trials rounded up to whole engine-permutation cycles so position/precedence are balanced; gc collected then disabled around every timed call; warm single process",
+      "total_chunks": 80,
+      "total_rows": 5010,
+      "vectorized_full_scan": {
+        "ci95_high_seconds": 0.02906634473766819,
+        "ci95_low_seconds": 0.02900875915115069,
+        "mean_estimand": "raw untrimmed arithmetic mean of all measured trials",
+        "mean_latency_seconds": 0.02903755194440944,
+        "median_latency_seconds": 0.029045565000160423,
+        "raw_latency_samples_seconds": [
+          0.029040225999779068,
+          0.02904784100019242,
+          0.029021835000094143,
+          0.02899987399996462,
+          0.029043289000128425,
+          0.029093050000028597,
+          0.02906204099963361,
+          0.029002767999827483,
+          0.028998992999731854,
+          0.029138853999938874,
+          0.028916795999975875,
+          0.0290815289999955,
+          0.029100286999891978,
+          0.02905607799993959,
+          0.029099070000029315,
+          0.028970920000119804,
+          0.029059864000373636,
+          0.02894261999972514
+        ],
+        "retained_sample_count": 15,
+        "row_count": 11,
+        "sample_count": 18,
+        "std_latency_seconds": 5.789453847174962e-05,
+        "trimmed_estimand": "descriptive fastest retained fraction; no inferential interval",
+        "uncertainty_method": "descriptive Student-t interval, raw mean +/- t(0.975, n-1) * sample SE (t=2.110 for n=18); coverage not established; no significance test",
+        "upper_trim_fraction": 0.15,
+        "upper_trimmed_mean_seconds": 0.02902251493330065,
+        "upper_trimmed_std_seconds": 5.043119682734934e-05
+      },
+      "vectorized_full_scan_speedup": 8.342971768958579,
+      "window": "90 days"
+    }
+  ]
+}
