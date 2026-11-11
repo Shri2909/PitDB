@@ -1,9 +1,4 @@
-"""The transaction-time index (ChunkStore.labels_visible_as_of) must produce
-exactly the same candidate/skipped chunks as the plain linear scan it
-replaces -- it's purely a faster way to compute the same partition, never a
-different one. Proven via property-based equivalence across randomized
-label sets and AS OF cutoffs, not just hand-picked examples.
-"""
+"""The AS OF index must yield the same chunk partition as the linear scan."""
 
 from __future__ import annotations
 
@@ -29,8 +24,7 @@ def _values(close: float) -> np.ndarray:
 def _build_mixed_store(
     base_day_offsets: list[int], correction_specs: list[tuple[int, int]]
 ) -> ChunkStore:
-    """Ingest base rows at ``base_day_offsets``, then corrections at
-    (day_offset, transaction_lag_days) pairs in ``correction_specs``."""
+    """Ingest base rows, then corrections as (day_offset, transaction_lag_days)."""
 
     store = ChunkStore()
     base_day = datetime(2024, 1, 1, tzinfo=UTC)
@@ -93,12 +87,7 @@ def test_indexed_pushdown_matches_linear_pushdown_property(
     as_of_offset_days: int,
     price_threshold: float,
 ) -> None:
-    """Property: the indexed evaluate_pushdown path and the linear-scan
-    fallback must always partition chunks into the same candidate/skipped
-    sets, IN THE SAME ORDER, for any label set and any AS OF cutoff -- this
-    is the actual correctness claim behind introducing the index at all, and
-    evaluate_pushdown's own docstring promises input order is preserved
-    regardless of which path is used."""
+    """Indexed and linear pushdown give identical candidate/skipped lists, in order."""
 
     base_day_offsets = sorted(base_day_offsets)
     correction_specs = [
@@ -119,8 +108,7 @@ def test_indexed_pushdown_matches_linear_pushdown_property(
             predicate, store.labels, as_of=as_of, as_of_index=store
         )
 
-        # List equality, not just set equality: evaluate_pushdown's docstring
-        # promises input order is preserved regardless of which path ran.
+        # List equality: input order must be preserved on both paths.
         assert linear_result.candidate_chunk_ids == indexed_result.candidate_chunk_ids
         assert linear_result.skipped_chunk_ids == indexed_result.skipped_chunk_ids
         assert linear_result.total_chunks == indexed_result.total_chunks
@@ -148,9 +136,7 @@ def test_as_of_index_stays_correct_after_compaction() -> None:
 
 
 def test_evaluate_pushdown_without_index_is_unaffected() -> None:
-    """Backward compatibility: omitting as_of_index must be byte-identical to
-    the pre-existing linear-scan-only behavior (this is what every existing
-    test_pushdown.py test relies on)."""
+    """Omitting as_of_index keeps the plain linear-scan behavior."""
 
     store = _build_mixed_store(base_day_offsets=[0, 1, 2], correction_specs=[(1, 2)])
     predicate = Comparison("symbol", "=", "AAPL", "symbol")

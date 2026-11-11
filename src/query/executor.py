@@ -4,12 +4,22 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from datetime import datetime
 
 import pandas as pd
 
-from src.query.predicate import _coerce_column_literal, validate_predicate_columns
+from src.query.predicate import (
+    PredicateNode,
+    _coerce_column_literal,
+    iter_datetime_literals,
+    validate_predicate_columns,
+)
 from src.query.pushdown import PushdownResult, evaluate_pushdown
-from src.query.sql_parser import extract_as_of, parse_where_clause
+from src.query.sql_parser import (
+    UnsupportedQueryError,
+    extract_as_of,
+    parse_where_clause,
+)
 from src.query.versioning import (
     TRANSACTION_TIME_COLUMN,
     attach_effective_transaction_time,
@@ -29,8 +39,33 @@ class QueryResult:
     selectivity: float
 
 
+def bind_query_literals(
+    store: ChunkStore, predicate: PredicateNode, as_of: datetime | None
+) -> pd.Timestamp | None:
+    """Localize every datetime literal and the AS OF cutoff to the store's timezone.
+
+    Doing it up front makes a failure deterministic and typed. Returns the
+    aligned AS OF cutoff (or ``None``).
+    """
+
+    try:
+        for literal in iter_datetime_literals(predicate):
+            store.align_as_of(literal)
+        return None if as_of is None else store.align_as_of(as_of)
+    except ValueError as exc:
+        raise UnsupportedQueryError(
+            f"datetime literal cannot be used with this store's timezone: {exc}"
+        ) from exc
+
+
 class QueryExecutor:
-    """Parse, prune, decompress candidates, and apply an exact row filter."""
+    """Parse, prune, decompress candidates, and apply an exact row filter.
+
+    Non-versioned queries return rows in natural chunk order; versioned ones
+    (AS OF, corrections or duplicate base keys) are version-resolved and sorted
+    by ``(timestamp, symbol)``. The orders are not unified so the unversioned
+    fast path stays free of an O(n log n) sort.
+    """
 
     def __init__(self, store: ChunkStore, *, enable_pruning: bool = True) -> None:
         if not isinstance(store, ChunkStore):
@@ -49,8 +84,7 @@ class QueryExecutor:
         validate_predicate_columns(
             predicate, {"timestamp", "symbol", *self.store.value_columns}
         )
-        if as_of is not None:
-            as_of = self.store.align_as_of(as_of)
+        as_of = bind_query_literals(self.store, predicate, as_of)
         versioned = self.store.has_corrections or self.store.has_base_duplicates
         pushdown_result = (
             evaluate_pushdown(
@@ -70,36 +104,16 @@ class QueryExecutor:
             )
         )
 
-        # Exact row evaluation runs predicate.evaluate_vectorized, which
-        # translates the predicate tree into pandas boolean-mask operations,
-        # rather than looping row-by-row with frame.apply(axis=1) (a
-        # Python-level function call per row).
-        #
-        # That mask is applied once, on the concatenation of every candidate
-        # chunk, rather than once per chunk: a scale sweep at 24,000 chunks
-        # showed a 0%-skip query still ran ~1.4x slower than the full-scan
-        # baseline when the mask was applied per chunk, because calling a
-        # pandas boolean-mask operation once per ~20-row chunk pays that
-        # call's fixed overhead thousands of times instead of once. Matching
-        # the full-scan baseline's own structure (concatenate everything,
-        # then filter once) removed that gap.
+        # The mask is applied once to the concatenation of all candidates: per-chunk
+        # masks paid pandas' fixed call overhead thousands of times at scale.
         chunks = [
             self.store.get_chunk(chunk_id)
             for chunk_id in pushdown_result.candidate_chunk_ids
         ]
-        # Version resolution only runs when it could possibly matter: an
-        # explicit AS OF cutoff, or at least one correction chunk among the
-        # candidates. Every existing query -- no AS OF, no corrections ever
-        # ingested -- takes the exact prior code path, byte-for-byte.
         needs_resolution = as_of is not None or versioned
 
         if chunks and needs_resolution:
-            # Resolve each (symbol, timestamp) to its current/AS-OF-visible
-            # version BEFORE applying the exact predicate, not after: a
-            # correction's own value might fail the predicate the base row
-            # happened to pass (or vice versa), and filtering first would
-            # silently discard the correction, letting the stale base row
-            # leak through the final result.
+            # Resolve before filtering, or a correction failing the predicate is lost.
             combined = pd.concat(
                 [
                     attach_effective_transaction_time(chunk.decompress(), chunk)
@@ -112,11 +126,7 @@ class QueryExecutor:
                     combined[TRANSACTION_TIME_COLUMN], as_of
                 )
                 combined = combined[combined[TRANSACTION_TIME_COLUMN] <= aligned_as_of]
-            # resolve_versions already ends with a sort by
-            # ["timestamp", "symbol"], and boolean-mask filtering below
-            # preserves row order -- so data is already in final order here.
-            # No further sort needed (see the elif branch's comment for why
-            # that one still needs one).
+            # resolve_versions sorts by (timestamp, symbol); masking keeps that order.
             resolved = resolve_versions(combined).drop(
                 columns=[TRANSACTION_TIME_COLUMN]
             )
@@ -130,24 +140,8 @@ class QueryExecutor:
                 [chunk.decompress() for chunk in chunks], ignore_index=True
             )
             data = combined[predicate.evaluate_vectorized(combined)]
-            # This branch skips resolve_versions entirely, so rows are still
-            # in natural chunk order. FullScanQueryEngine's own
-            # needs_resolution is scoped to the whole store (it has no
-            # narrower scope to check), so it can legitimately take the
-            # resolved branch above -- which does end sorted -- for a query
-            # whose own candidates here don't need resolution. Without
-            # sorting here too, otherwise row-identical results could differ
-            # only in order, failing the full-scan/pushdown equivalence
-            # every benchmark and test in this project relies on. Gated
-            # behind the cheap has_corrections check (not unconditional): a
-            # store that has never seen a correction takes the exact prior
-            # code path, byte-for-byte, including natural chunk-order --
-            # required for parity with ChunkStore.full_scan()'s own unsorted
-            # natural order.
-            if not data.empty and self.store.has_corrections:
-                data = data.sort_values(["timestamp", "symbol"], kind="stable")
         else:
-            # Do not decompress a skipped chunk merely to discover the schema.
+            # Avoid decompressing a chunk just to learn the schema.
             data = self.store.empty_frame()
 
         data = data.reset_index(drop=True)

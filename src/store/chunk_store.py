@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import bisect
 import dataclasses
+import functools
+import threading
 from collections.abc import Callable, Iterator
 from datetime import datetime
+from typing import Any, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -22,9 +25,22 @@ from src.store.validation import (
     validate_value_columns,
 )
 
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _synchronized(method: _F) -> _F:
+    """Run a ChunkStore method while holding the store's re-entrant lock."""
+
+    @functools.wraps(method)
+    def wrapper(self: ChunkStore, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper  # type: ignore[return-value]
+
 
 class ChunkStore:
-    """Manage per-symbol builders and finalized raw column chunks."""
+    """Manage per-symbol builders and finalized raw column chunks (thread-safe)."""
 
     def __init__(
         self,
@@ -38,21 +54,13 @@ class ChunkStore:
 
         self.chunk_boundary = chunk_boundary
         self.value_columns = selected
+        self._lock = threading.RLock()
         self._chunks: list[Chunk] = []
         self._chunk_by_id: dict[int, Chunk] = {}
         self._builders: dict[str, ChunkBuilder] = {}
         self._chunk_id_counter = 0
         self._chunk_id_source = self._chunk_ids()
-        # Sorted together by _as_of_key(label): transaction_time_start for a
-        # correction chunk, else time_start. Lets labels_visible_as_of()
-        # answer "which chunks might be visible as of T" in O(log n) via
-        # bisect instead of a linear per-label scan. A 1D threshold query
-        # only needs a sorted list, not a 2D structure like an R-tree --
-        # this project doesn't (yet) support transaction-time range queries,
-        # which is what a 2D index would be for. Assumes homogeneous
-        # timezone-awareness across every label in the store (consistent
-        # with ChunkBuilder, which already raises on a per-symbol tz
-        # mismatch rather than silently coping).
+        # Parallel lists sorted by _as_of_key(label), for O(log n) AS OF lookups.
         self._as_of_keys: list[datetime] = []
         self._as_of_labels: list[ChunkLabel] = []
         self._correction_chunk_count = 0
@@ -62,28 +70,25 @@ class ChunkStore:
 
     def _chunk_ids(self) -> Iterator[int]:
         """Yield one globally unique, monotonically increasing chunk ID."""
-
         while True:
             chunk_id = self._chunk_id_counter
             self._chunk_id_counter += 1
             yield chunk_id
 
+    @_synchronized
     def ingest_row(self, timestamp: datetime, symbol: str, values: np.ndarray) -> None:
         """Route one sequential row to its symbol's active builder."""
-
         if not isinstance(symbol, str) or not symbol.strip():
             raise ValueError("symbol must be a non-empty string")
 
         timestamp = canonical_timestamp(timestamp, self._time_reference)
+        # Reject a tz mismatch before buffering: it would poison later flush_all().
+        self._validate_as_of_key_tz(timestamp)
         last_timestamp = self._last_valid_timestamp.get(symbol)
 
         builder = self._builders.get(symbol)
         if builder is None:
-            # A brand-new builder starts with no memory of this symbol's
-            # prior data, so its own non-decreasing check (ChunkBuilder
-            # only compares against its own _time_end) can't catch an
-            # out-of-order row resuming after a flush_all(). Check against
-            # the last timestamp this symbol ever successfully ingested.
+            # A new builder can't see pre-flush_all() rows, so check order here.
             if last_timestamp is not None:
                 try:
                     out_of_order = timestamp < last_timestamp
@@ -106,7 +111,6 @@ class ChunkStore:
                 chunk_id_counter=self._chunk_id_source,
             )
         # Publish the old window before the builder discards its buffer.
-        # A failed index/publication leaves accepted rows available for retry.
         builder.add_row(timestamp, values, publish=self._add_chunk)
         self._builders[symbol] = builder
         if last_timestamp is not None and timestamp == last_timestamp:
@@ -115,6 +119,7 @@ class ChunkStore:
         if self._time_reference is None:
             self._time_reference = timestamp
 
+    @_synchronized
     def ingest_correction(
         self,
         timestamp: datetime,
@@ -124,18 +129,9 @@ class ChunkStore:
     ) -> None:
         """Append a bitemporal correction for one (symbol, timestamp) row.
 
-        Deliberately separate from ``ingest_row``: it never touches
-        ``self._builders``, so the live per-symbol builder's non-decreasing
-        causality contract is completely undisturbed. A correction is built
-        with a throwaway single-row ``ChunkBuilder`` sharing this store's
-        chunk-id source, so it inherits the exact same validation, price-zone
-        computation, and byte-packing logic finalized chunks use -- no
-        parallel implementation to silently diverge from it.
-
-        The only causality rule enforced here: a correction cannot be
-        learned before the event itself happened.
+        Bypasses the live per-symbol builders; a correction cannot be learned
+        before the event itself happened.
         """
-
         if not isinstance(symbol, str) or not symbol.strip():
             raise ValueError("symbol must be a non-empty string")
         timestamp = canonical_timestamp(timestamp, self._time_reference)
@@ -157,6 +153,8 @@ class ChunkStore:
                 f"received transaction_time={transaction_time!r} "
                 f"for timestamp={timestamp!r}"
             )
+        # Check awareness against the store before a chunk ID is consumed.
+        self._validate_as_of_key_tz(timestamp)
 
         builder = ChunkBuilder(
             symbol=symbol,
@@ -183,39 +181,15 @@ class ChunkStore:
         if self._time_reference is None:
             self._time_reference = timestamp
 
+    @_synchronized
     def compact_corrections(
         self, symbol: str | None = None, boundary: ChunkBoundary | None = None
     ) -> int:
-        """Merge small correction chunks into fewer, larger ones.
+        """Merge correction chunks per symbol and return the net chunk-count reduction.
 
-        Mirrors Delta Lake's ``OPTIMIZE``, Apache Hudi's compaction table
-        service, and TDSQL's late (async) data migration: ``ingest_correction``
-        stays cheap and never blocks on this -- corrections accumulate as
-        many small chunks, and get consolidated later via this explicit,
-        idempotent maintenance operation.
-
-        Only ever touches correction chunks (``transaction_time_start is not
-        None``); base chunks are never read or rewritten. Merged rows are
-        replayed through a fresh ``ChunkBuilder`` in valid-timestamp order
-        (required -- corrections may target any past timestamp in any
-        ingestion order, but ``ChunkBuilder`` only accepts non-decreasing
-        order), so a merge naturally respects the boundary the same way
-        base ingestion does: a merge spanning more time than one boundary
-        window allows simply produces multiple merged chunks.
-
-        ``boundary`` defaults to ``self.chunk_boundary`` (the base store's
-        own granularity) if omitted. Correction chunks don't need the same
-        fine pruning precision base data does -- corrections are relatively
-        rare events, so a handful spread across many of the base store's
-        boundary windows (e.g. months) may have nothing to merge with even
-        when there are plenty of corrections overall. Passing a deliberately
-        coarser boundary here (e.g. yearly) merges far more aggressively at
-        low correction volume, mirroring Hudi's and Delta's own configurable
-        compaction batch/target-file-size parameters.
-
-        Returns the net reduction in chunk count.
+        Base chunks are untouched. ``boundary`` defaults to the store's own;
+        a coarser one merges more aggressively.
         """
-
         merge_boundary = boundary if boundary is not None else self.chunk_boundary
         groups: dict[str, list[Chunk]] = {}
         for chunk in self._chunks:
@@ -233,12 +207,7 @@ class ChunkStore:
             rows: list[tuple[datetime, np.ndarray, datetime]] = []
             for chunk in chunks:
                 assert chunk.correction_transaction_times is not None
-                # column_arrays() skips decompress()'s pandas DataFrame
-                # construction entirely -- for the handful of rows a
-                # correction chunk holds, that construction (dtype
-                # inference, index building) dominated compact_corrections'
-                # own runtime; reading the raw float64 arrays directly and
-                # indexing them by position is the same bytes, no DataFrame.
+                # column_arrays() avoids decompress()'s costly DataFrame build.
                 columns = chunk.column_arrays()
                 for position, transaction_time in enumerate(
                     chunk.correction_transaction_times
@@ -258,11 +227,8 @@ class ChunkStore:
                 value_columns=self.value_columns,
                 chunk_id_counter=self._chunk_id_source,
             )
-            # add_row returns the *previous* window's completed chunk (never
-            # including the row just added, which starts the new window --
-            # see ChunkBuilder.add_row), so pending_transaction_times always
-            # holds exactly that previous window's transaction times at the
-            # moment a completed chunk appears.
+            # add_row returns the previous window's chunk, so the pending times
+            # are exactly that window's transaction times.
             merged_chunks: list[Chunk] = []
             pending_transaction_times: list[datetime] = []
             for timestamp, row_values, transaction_time in rows:
@@ -288,9 +254,7 @@ class ChunkStore:
 
         if not replacements:
             return 0
-        # Prepare every symbol before changing membership, then operate on
-        # private container copies. Publication failure restores the complete
-        # previous state, including earlier symbol groups in the same call.
+        # Work on copies so a publication failure restores the previous state.
         previous = (
             self._chunks,
             self._chunk_by_id,
@@ -335,17 +299,7 @@ class ChunkStore:
         )
 
     def _remove_chunks(self, chunk_ids: set[int]) -> None:
-        """Remove many chunks in one batched pass.
-
-        ``compact_corrections`` used to call a single-chunk ``_remove_chunk``
-        once per old chunk being merged away, and that method rebuilt
-        ``self._chunks`` (and re-scanned the as-of index) from scratch on
-        every call -- O(n) work repeated once per removed chunk is O(k*n)
-        for k removals, not O(n). Filtering every structure exactly once
-        here, regardless of how many chunk_ids are being removed, is what
-        makes removal O(n) overall.
-        """
-
+        """Remove many chunks in one O(n) pass."""
         if not chunk_ids:
             return
         missing = chunk_ids - self._chunk_by_id.keys()
@@ -364,9 +318,6 @@ class ChunkStore:
         for chunk_id in chunk_ids:
             del self._chunk_by_id[chunk_id]
 
-        # Filtering the two parallel index lists together in one pass keeps
-        # them sorted (removing elements from an already-sorted sequence
-        # can't unsort it) without needing a bisect lookup per removed key.
         kept_keys: list[datetime] = []
         kept_labels: list[ChunkLabel] = []
         if len(self._as_of_keys) != len(self._as_of_labels):
@@ -379,17 +330,10 @@ class ChunkStore:
         self._as_of_labels = kept_labels
         self._correction_chunk_count -= removed_correction_count
 
+    @_synchronized
     def flush_all(self) -> None:
-        """Finalize every active symbol and end the current ingestion session.
-
-        Removes each symbol's builder from ``self._builders`` only once it
-        has been successfully flushed and added, not all at once at the end
-        -- if ``_add_chunk`` raises partway through, ``self._builders``
-        accurately reflects which symbols were and weren't processed,
-        instead of a stale ``.clear()`` erasing that information regardless
-        of where the failure happened.
-        """
-
+        """Finalize every active symbol and end the current ingestion session."""
+        # Builders are removed one by one so a mid-way failure leaves accurate state.
         for symbol in list(self._builders.keys()):
             builder = self._builders[symbol]
             if builder._row_count:
@@ -398,11 +342,8 @@ class ChunkStore:
             del self._builders[symbol]
 
     def _add_chunk(self, chunk: Chunk) -> None:
-        # Compute the as-of-index insertion position -- which can raise on a
-        # tz-awareness mismatch -- before mutating any structure. Mutating
-        # _chunks/_chunk_by_id first and only then discovering the bisect
-        # call fails would leave the chunk permanently registered but absent
-        # from the as-of index: a silent, permanent pushdown false negative.
+        # Compute the insertion position first: it can raise, and a chunk left
+        # out of the AS OF index would be a silent pushdown false negative.
         key = self._as_of_key(chunk.label)
         self._validate_as_of_key_tz(key)
         position = bisect.bisect_right(self._as_of_keys, key)
@@ -415,17 +356,7 @@ class ChunkStore:
             self._correction_chunk_count += 1
 
     def _validate_as_of_key_tz(self, key: datetime) -> None:
-        """Raise a clear error on a store-wide tz-awareness mismatch.
-
-        Nothing enforces homogeneous tz-awareness across symbols --
-        ``ChunkBuilder`` only compares a row against its own builder's
-        ``_time_end``, never store-wide, and ``ingest_correction`` uses a
-        disposable one-off builder that has no memory of any other symbol
-        either. Left unchecked, ``bisect.bisect_right`` below would raise a
-        bare ``TypeError`` from deep inside ``_add_chunk``, after this
-        method had already mutated other store state in the old ordering.
-        """
-
+        """Raise a clear error on a store-wide tz-awareness mismatch."""
         key = timestamp_value(key, name="AS OF index key")
         reference = self._as_of_keys[0] if self._as_of_keys else self._time_reference
         if reference is None:
@@ -449,28 +380,21 @@ class ChunkStore:
             else label.time_start
         )
 
+    @_synchronized
     def labels_visible_as_of(self, as_of: datetime) -> list[ChunkLabel]:
-        """Return every label that might hold a row visible as of a time.
-
-        O(log n) bisect plus a cheap slice (copying already-known
-        references, not recomputing anything per label) instead of a linear
-        scan calling ``label_visible_as_of`` on every label -- see
-        ``src/query/pushdown.py``'s ``as_of_index`` fast path, which uses
-        this to avoid running predicate evaluation on chunks already known
-        to be AS-OF-irrelevant.
-        """
-
+        """Return every label that might hold a row visible as of a time."""
         as_of = self.align_as_of(as_of)
         cut = bisect.bisect_right(self._as_of_keys, as_of)
         return self._as_of_labels[:cut]
 
+    @_synchronized
     def labels_not_visible_as_of(self, as_of: datetime) -> list[ChunkLabel]:
-        """The complement of ``labels_visible_as_of`` -- also O(log n) + slice."""
-
+        """Return the complement of ``labels_visible_as_of``."""
         as_of = self.align_as_of(as_of)
         cut = bisect.bisect_right(self._as_of_keys, as_of)
         return self._as_of_labels[cut:]
 
+    @_synchronized
     def align_as_of(self, as_of: datetime) -> pd.Timestamp:
         """Use the same timezone policy for indexed and exact AS OF checks."""
         reference = self._time_reference
@@ -483,76 +407,105 @@ class ChunkStore:
         )
 
     @property
+    @_synchronized
     def has_base_duplicates(self) -> bool:
         """Whether accepted base keys require last-ingested version resolution."""
         return self._has_base_duplicates
 
+    @_synchronized
     def ingest_dataframe(self, df: pd.DataFrame) -> None:
         """Ingest a DataFrame through the same sequential replay contract."""
-
         harness = ReplayHarness(df, value_columns=self.value_columns)
         self.ingest_from_replay(harness)
 
+    @_synchronized
     def ingest_from_replay(self, harness: ReplayHarness) -> None:
-        """Canonical no-lookahead ingestion path."""
+        """Canonical no-lookahead ingestion path; atomic (rolls back on any failure)."""
+        snapshot = self._snapshot()
+        try:
+            for row in harness:
+                self.ingest_row(
+                    row["timestamp"],
+                    row["symbol"],
+                    row["values"],
+                )
+            self.flush_all()
+        except BaseException:
+            self._restore(snapshot)
+            raise
 
-        for row in harness:
-            self.ingest_row(
-                row["timestamp"],
-                row["symbol"],
-                row["values"],
-            )
-        self.flush_all()
+    def _snapshot(self) -> dict[str, Any]:
+        return {
+            "chunks": list(self._chunks),
+            "chunk_by_id": dict(self._chunk_by_id),
+            "as_of_keys": list(self._as_of_keys),
+            "as_of_labels": list(self._as_of_labels),
+            "correction_chunk_count": self._correction_chunk_count,
+            "chunk_id_counter": self._chunk_id_counter,
+            "builders": {
+                symbol: (builder, builder._capture_state())
+                for symbol, builder in self._builders.items()
+            },
+            "last_valid_timestamp": dict(self._last_valid_timestamp),
+            "time_reference": self._time_reference,
+            "has_base_duplicates": self._has_base_duplicates,
+        }
+
+    def _restore(self, snapshot: dict[str, Any]) -> None:
+        self._chunks = snapshot["chunks"]
+        self._chunk_by_id = snapshot["chunk_by_id"]
+        self._as_of_keys = snapshot["as_of_keys"]
+        self._as_of_labels = snapshot["as_of_labels"]
+        self._correction_chunk_count = snapshot["correction_chunk_count"]
+        self._chunk_id_counter = snapshot["chunk_id_counter"]
+        self._builders = {}
+        for symbol, (builder, state) in snapshot["builders"].items():
+            builder._restore_state(state)
+            self._builders[symbol] = builder
+        self._last_valid_timestamp = snapshot["last_valid_timestamp"]
+        self._time_reference = snapshot["time_reference"]
+        self._has_base_duplicates = snapshot["has_base_duplicates"]
 
     @property
+    @_synchronized
     def chunks(self) -> list[Chunk]:
         """Return a shallow copy so callers cannot mutate store membership."""
-
         return list(self._chunks)
 
     @property
+    @_synchronized
     def labels(self) -> list[ChunkLabel]:
         return [chunk.label for chunk in self._chunks]
 
     @property
+    @_synchronized
     def total_chunks(self) -> int:
         return len(self._chunks)
 
     @property
+    @_synchronized
     def has_corrections(self) -> bool:
-        """O(1) check maintained incrementally by _add_chunk/_remove_chunks.
-
-        Used to disable price-based pushdown pruning (see
-        ``evaluate_pushdown``'s ``price_pruning_enabled``): once any
-        correction chunk exists anywhere in the store, a correction's own
-        price zone map failing a value predicate must never hide it from
-        candidacy, or a stale base row could silently win over it.
-        """
-
+        """Whether any correction chunk exists (disables price pushdown pruning)."""
         return self._correction_chunk_count > 0
 
     @property
+    @_synchronized
     def total_rows(self) -> int:
         return sum(chunk.label.row_count for chunk in self._chunks)
 
     @property
+    @_synchronized
     def total_column_bytes(self) -> int:
         return sum(len(chunk.column_data) for chunk in self._chunks)
 
+    @_synchronized
     def get_chunk(self, chunk_id: int) -> Chunk:
-        # This used to scan self._chunks linearly. QueryExecutor calls
-        # get_chunk once per candidate chunk, so a broad query (most/all
-        # chunks are candidates) turned that into an O(total_chunks^2)
-        # pattern -- measured at 24,000 chunks, a 0%-skip query took 22.5s
-        # through the pushdown-query path against 6.8s for the full-scan
-        # baseline that never calls get_chunk. Chunk IDs are assigned once,
-        # at creation, and never reused, so a plain dict gives O(1) lookup
-        # with no invalidation concerns.
         try:
             return self._chunk_by_id[chunk_id]
         except KeyError:
             raise KeyError(f"chunk ID not found: {chunk_id}") from None
 
+    @_synchronized
     def empty_frame(self) -> pd.DataFrame:
         """Return the same public schema/dtypes when no chunk is selected."""
         timezone = None if self._time_reference is None else self._time_reference.tz
@@ -574,13 +527,14 @@ class ChunkStore:
         if predicate_fn is not None and not callable(predicate_fn):
             raise TypeError("predicate_fn must be callable or None")
 
-        if not self._chunks:
+        # Chunks are immutable, so the lock need not be held while decompressing.
+        chunks = self.chunks
+        if not chunks:
             return self.empty_frame()
 
-        # Decompress before filtering: this is intentionally the naive
-        # full-scan baseline, with no label pruning or skipped chunks.
+        # Intentionally naive: decompress everything before filtering.
         frame = pd.concat(
-            [chunk.decompress() for chunk in self._chunks],
+            [chunk.decompress() for chunk in chunks],
             ignore_index=True,
         )
         if predicate_fn is None:

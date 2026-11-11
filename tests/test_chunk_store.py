@@ -157,10 +157,7 @@ def test_flush_partial_chunk() -> None:
 
 
 def test_get_chunk_by_id() -> None:
-    # get_chunk used to scan self._chunks linearly; this pins its by-ID
-    # lookup contract (found chunk matches its own label, and an unknown ID
-    # raises KeyError) so a future change can't silently reintroduce an O(n)
-    # scan or an incorrect lookup.
+    # Pins by-ID lookup: a found chunk matches its label; an unknown ID raises KeyError.
     timestamps = pd.date_range("2024-09-01 10:00:00", periods=90, freq="min", tz="UTC")
     frame = _market_frame(timestamps)
     store = ChunkStore(DurationBoundary(timedelta(hours=1)))
@@ -207,8 +204,7 @@ def test_row_count_accuracy() -> None:
 
 
 def test_monthly_boundary_chunking() -> None:
-    # Two complete calendar years give every month 20-23 weekday rows and cover
-    # both ordinary transitions and the December 2023 -> January 2024 rollover.
+    # Two full years cover ordinary transitions and the Dec 2023 -> Jan 2024 rollover.
     timestamps = pd.date_range("2023-01-02", "2024-12-31", freq="B", tz="UTC")
     frame = _market_frame(timestamps)
     store = ChunkStore(chunk_boundary=MonthlyBoundary())
@@ -295,11 +291,7 @@ def test_ingest_correction_appends_a_labeled_chunk() -> None:
 
 
 def test_cross_symbol_tz_mismatch_raises_and_preserves_store_state() -> None:
-    """Regression: _add_chunk used to mutate _chunks/_chunk_by_id before the
-    bisect call that could raise on a tz-awareness mismatch, permanently
-    desyncing the as-of index from the rest of the store -- the chunk stayed
-    registered but silently vanished from every future as-of lookup.
-    """
+    """A tz mismatch must not leave a chunk registered but missing from the index."""
 
     store = ChunkStore()
     store.ingest_row(
@@ -310,22 +302,16 @@ def test_cross_symbol_tz_mismatch_raises_and_preserves_store_state() -> None:
     store.flush_all()
     assert store.total_chunks == 1
 
-    # The tz mismatch only surfaces once this row's chunk is actually
-    # finalized (_add_chunk is where the as-of-index bisect happens) -- a
-    # brand-new builder's first row never crosses its own boundary, so the
-    # mismatch is only caught on the flush that finalizes it.
-    store.ingest_row(
-        pd.Timestamp("2024-01-02 09:30:00", tz="UTC"),
-        "MSFT",
-        np.array([200.0, 201.0, 199.0, 200.5, 2_000.0]),
-    )
+    # Rejected at ingest, before buffering, so it can't poison a later flush_all().
     with pytest.raises(ValueError, match="timezone awareness"):
-        store.flush_all()
+        store.ingest_row(
+            pd.Timestamp("2024-01-02 09:30:00", tz="UTC"),
+            "MSFT",
+            np.array([200.0, 201.0, 199.0, 200.5, 2_000.0]),
+        )
+    store.flush_all()
 
-    # The failed chunk must leave no trace: not registered in _chunks, not in
-    # _chunk_by_id, and the as-of index still exactly matches total_chunks --
-    # not a chunk registered in one structure but silently missing from the
-    # as-of index forever.
+    # The failed chunk must leave no trace in _chunks, _chunk_by_id or the index.
     assert store.total_chunks == 1
     assert store.total_rows == 1
     assert len(store.labels) == 1
@@ -335,11 +321,7 @@ def test_cross_symbol_tz_mismatch_raises_and_preserves_store_state() -> None:
 
 
 def test_flush_all_then_out_of_order_row_raises() -> None:
-    """Regression: a fresh ChunkBuilder created after flush_all() has no
-    memory of a symbol's prior data, so its own non-decreasing check alone
-    can't catch an out-of-order row resuming after a flush -- causality was
-    silently violated across that boundary.
-    """
+    """Ordering must still be enforced for a symbol resumed after flush_all()."""
 
     store = ChunkStore()
     t0 = pd.Timestamp("2024-03-01 09:30:00", tz="UTC")

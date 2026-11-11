@@ -42,12 +42,11 @@ def timestamp_value(value: datetime, *, name: str = "timestamp") -> pd.Timestamp
 
 
 def align_timestamp(reference: datetime, value: datetime) -> pd.Timestamp:
-    """Apply the query literal's documented wall-time/offset semantics.
+    """Align a query literal to the store's timezone semantics.
 
-    Naive literals in an aware store are localized on their actual date in
-    the store's named zone. Ambiguous/nonexistent local times are rejected.
-    Offset literals on naive data compare their wall time, as before.
-    Aware/aware comparisons preserve absolute instants, including DST folds.
+    Naive literals are localized in an aware store's zone (ambiguous or
+    nonexistent times are rejected); offset literals on naive data compare
+    wall time; aware/aware comparisons keep absolute instants.
     """
     ref = timestamp_value(reference, name="reference timestamp")
     literal = timestamp_value(value, name="datetime literal")
@@ -69,11 +68,7 @@ def align_timestamp(reference: datetime, value: datetime) -> pd.Timestamp:
 def canonical_timestamp(
     value: datetime, reference: datetime | None = None, *, name: str = "timestamp"
 ) -> pd.Timestamp:
-    """Keep one named timezone for comparable stored aware timestamps.
-
-    Awareness mismatches are left intact for the existing builder/publication
-    rejection boundary; they are never silently localized as ingestion data.
-    """
+    """Convert aware timestamps to the reference zone (mismatches are left as is)."""
     timestamp = timestamp_value(value, name=name)
     if reference is not None:
         ref = timestamp_value(reference, name="reference timestamp")

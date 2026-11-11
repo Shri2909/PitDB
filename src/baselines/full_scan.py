@@ -6,7 +6,7 @@ import time
 
 import pandas as pd
 
-from src.query.executor import QueryResult
+from src.query.executor import QueryResult, bind_query_literals
 from src.query.predicate import _coerce_column_literal, validate_predicate_columns
 from src.query.pushdown import PushdownResult
 from src.query.sql_parser import extract_as_of, parse_where_clause
@@ -31,23 +31,13 @@ class FullScanQueryEngine:
 
         started = time.perf_counter()
         remaining_sql, as_of = extract_as_of(sql)
-        if as_of is not None:
-            as_of = self.store.align_as_of(as_of)
         predicate = parse_where_clause(remaining_sql)
         validate_predicate_columns(
             predicate, {"timestamp", "symbol", *self.store.value_columns}
         )
+        as_of = bind_query_literals(self.store, predicate, as_of)
 
         chunks = self.store.chunks
-        # Same gate QueryExecutor uses: only decompress-and-resolve on
-        # transaction time when it could matter. Otherwise this stays
-        # exactly the naive baseline it always was -- decompress everything,
-        # apply one exact row predicate, no label or pushdown decision
-        # consulted anywhere. Unlike QueryExecutor (whose needs_resolution is
-        # scoped to pushdown-surviving candidates, a possible strict subset
-        # of the store), chunks here is always the *whole* store, so this
-        # condition is exactly self.store.has_corrections -- using the O(1)
-        # property directly instead of re-deriving it via a scan.
         needs_resolution = (
             as_of is not None
             or self.store.has_corrections
@@ -55,9 +45,7 @@ class FullScanQueryEngine:
         )
 
         if chunks and needs_resolution:
-            # Resolve before filtering -- see QueryExecutor's identical
-            # reordering and its comment for why filtering first can
-            # silently discard a correction that fails the exact predicate.
+            # Resolve before filtering, as QueryExecutor does.
             combined = pd.concat(
                 [
                     attach_effective_transaction_time(chunk.decompress(), chunk)
@@ -70,14 +58,6 @@ class FullScanQueryEngine:
                     combined[TRANSACTION_TIME_COLUMN], as_of
                 )
                 combined = combined[combined[TRANSACTION_TIME_COLUMN] <= aligned_as_of]
-            # resolve_versions already ends with a sort by
-            # ["timestamp", "symbol"], and boolean-mask filtering below
-            # preserves row order -- data is already in final order here.
-            # No trailing sort needed: unlike QueryExecutor, this branch and
-            # needs_resolution's own condition are the same
-            # (self.store.has_corrections), so the "no resolution" branch
-            # below is only ever taken when there's nothing to sort for
-            # anyway (see the comment above needs_resolution).
             resolved = resolve_versions(combined).drop(
                 columns=[TRANSACTION_TIME_COLUMN]
             )

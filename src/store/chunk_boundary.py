@@ -19,18 +19,10 @@ class ChunkBoundary(ABC):
 
 @dataclass
 class MonthlyBoundary(ChunkBoundary):
-    """Use one calendar-month chunk per symbol.
-
-    This is the default strategy for daily OHLCV data. Daily rows are roughly
-    24 hours apart, so an hourly boundary would create one-row chunks --
-    multiplying per-chunk label/bookkeeping overhead across the store without
-    any pruning-precision benefit, since a one-row chunk can't be split any
-    finer than its own single row already is.
-    """
+    """Use one calendar-month chunk per symbol (the default for daily data)."""
 
     def crosses(self, time_start: datetime, current_timestamp: datetime) -> bool:
-        # Compare the pair, not only the month number. The year check handles
-        # same-month values from different years and December-to-January rollover.
+        # Compare (year, month), not month alone, so year rollover is detected.
         return (current_timestamp.year, current_timestamp.month) != (
             time_start.year,
             time_start.month,
@@ -39,11 +31,7 @@ class MonthlyBoundary(ChunkBoundary):
 
 @dataclass
 class DurationBoundary(ChunkBoundary):
-    """Use a fixed elapsed duration per symbol, including across DST changes.
-
-    Appropriate for dense intraday inputs, such as one-minute data grouped into
-    hourly chunks, where each window contains adjacent values.
-    """
+    """Use a fixed elapsed duration per symbol, including across DST changes."""
 
     duration: timedelta
 
@@ -58,8 +46,7 @@ class DurationBoundary(ChunkBoundary):
         current = timestamp_value(current_timestamp)
         if (start.tzinfo is None) != (current.tzinfo is None):
             raise TypeError("boundary timestamps must have matching timezone awareness")
-        # Each timestamp fits int64 nanoseconds, but their difference may not.
-        # Python integer arithmetic also supports timedelta.max boundaries.
+        # Python ints: the difference may overflow int64, and timedelta.max is valid.
         duration_ns = (
             (self.duration.days * 86400 + self.duration.seconds) * 1_000_000_000
             + self.duration.microseconds * 1000

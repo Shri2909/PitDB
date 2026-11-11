@@ -6,6 +6,7 @@ import math
 from collections.abc import Callable, Iterator
 from datetime import datetime
 from itertools import count
+from typing import Any
 
 import numpy as np
 
@@ -56,6 +57,29 @@ class ChunkBuilder:
         self._time_start = timestamp
         self._raw_values = {column: [] for column in self.value_columns}
 
+    def _capture_state(self) -> dict[str, Any]:
+        """Copy the mutable accumulators so a caller can roll back later."""
+        return {
+            "raw_values": {name: list(vals) for name, vals in self._raw_values.items()},
+            "timestamps": list(self._timestamps),
+            "min_price": self._min_price,
+            "max_price": self._max_price,
+            "time_start": self._time_start,
+            "time_end": self._time_end,
+            "row_count": self._row_count,
+        }
+
+    def _restore_state(self, state: dict[str, Any]) -> None:
+        self._raw_values = {
+            name: list(vals) for name, vals in state["raw_values"].items()
+        }
+        self._timestamps = list(state["timestamps"])
+        self._min_price = state["min_price"]
+        self._max_price = state["max_price"]
+        self._time_start = state["time_start"]
+        self._time_end = state["time_end"]
+        self._row_count = state["row_count"]
+
     def _validate_row(self, timestamp: datetime, values: np.ndarray) -> None:
         timestamp = timestamp_value(timestamp)
         if not isinstance(values, np.ndarray):
@@ -85,9 +109,7 @@ class ChunkBuilder:
         for index, column in enumerate(self.value_columns):
             self._raw_values[column].append(float(values[index]))
 
-        # Bare min/max with NaN is argument-order dependent because every NaN
-        # comparison is false. Skipping NaN preserves valid zone-map bounds; an
-        # all-NaN chunk intentionally remains (+inf, -inf).
+        # Skip NaN (order-dependent in min/max); all-NaN stays (+inf, -inf).
         price = float(values[self._price_column_index])
         if not math.isnan(price):
             self._min_price = min(self._min_price, price)
@@ -105,14 +127,20 @@ class ChunkBuilder:
         publish: Callable[[Chunk], None] | None = None,
     ) -> Chunk | None:
         """Consume one row and return the previous chunk on a boundary crossing."""
-
         timestamp = timestamp_value(timestamp)
         self._validate_row(timestamp, values)
+
+        # Ask the boundary before mutating state so a raise leaves the builder intact.
+        window_start = timestamp if self._time_start is None else self._time_start
+        crosses = self.chunk_boundary.crosses(window_start, timestamp)
         if self._time_start is None:
+            if crosses:
+                raise ValueError(
+                    "chunk boundary reported a crossing for the first row of a window"
+                )
             self._start_window(timestamp)
 
-        assert self._time_start is not None
-        if self.chunk_boundary.crosses(self._time_start, timestamp):
+        if crosses:
             completed = self.finalize()
             if publish is not None:
                 publish(completed)
@@ -126,7 +154,6 @@ class ChunkBuilder:
 
     def finalize(self) -> Chunk:
         """Finalize the active window without resetting builder state."""
-
         if (
             self._row_count == 0
             or self._time_start is None
@@ -175,7 +202,6 @@ class ChunkBuilder:
 
     def flush(self) -> Chunk | None:
         """Finalize the in-progress chunk at end-of-stream, if one exists."""
-
         if self._row_count == 0:
             return None
         completed = self.finalize()

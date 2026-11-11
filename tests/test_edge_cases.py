@@ -51,8 +51,7 @@ def _assert_float64_bits_equal(expected: np.ndarray, actual: np.ndarray) -> None
 
 
 def test_timestamp_dst_transition() -> None:
-    # The fall transition repeats 01:00 and 01:30 with different UTC offsets.
-    # DurationBoundary must use real elapsed time, not naive wall-clock labels.
+    # 01:00 and 01:30 repeat with different UTC offsets; use elapsed time.
     timestamps = pd.date_range(
         "2024-11-03 00:30:00",
         periods=7,
@@ -126,8 +125,7 @@ def test_market_holiday_gap() -> None:
 
     store.ingest_dataframe(frame)
 
-    # The duration strategy closes the pre-holiday chunk. No rows are invented
-    # for the weekend/holiday gap, and the two labels expose the actual break.
+    # The pre-holiday chunk closes; no rows are invented for the gap.
     assert store.total_chunks == 2
     first, second = store.chunks
     assert first.label.time_start == first.label.time_end == before_holiday
@@ -222,8 +220,7 @@ def test_very_large_chunk() -> None:
     values = np.array([125.0, 126.0, 124.0, 125.5, 10_000.0], dtype=np.float64)
     store = ChunkStore(MonthlyBoundary())
 
-    # Direct sequential ingestion avoids constructing a second 100,000-row
-    # DataFrame before compression while exercising the same store API.
+    # Direct ingestion avoids building a second 100,000-row DataFrame.
     for _ in range(row_count):
         store.ingest_row(timestamp, "AAPL", values)
     store.flush_all()

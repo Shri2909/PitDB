@@ -11,10 +11,7 @@ from src.store.label import ChunkLabel
 
 
 class AsOfIndex(Protocol):
-    """Minimal interface for the AS OF fast path -- ``ChunkStore`` satisfies
-    this by duck typing; pushdown.py deliberately doesn't import it, so this
-    module still only depends on ``list[ChunkLabel]``, not a concrete store.
-    """
+    """AS OF fast-path interface; ``ChunkStore`` satisfies it by duck typing."""
 
     def labels_visible_as_of(self, as_of: datetime) -> list[ChunkLabel]: ...
     def labels_not_visible_as_of(self, as_of: datetime) -> list[ChunkLabel]: ...
@@ -40,39 +37,11 @@ def evaluate_pushdown(
 ) -> PushdownResult:
     """Partition chunks into possible matches and definite non-matches.
 
-    ``PredicateNode.evaluate_against_label`` owns the conservative decision:
-    ``True`` means the chunk remains a candidate, including cases where its
-    label lacks enough information; only ``False`` authorizes skipping it.
-    Input order (the order of ``labels``) is preserved in both result lists,
-    regardless of whether the ``as_of_index`` fast path below is used.
-
-    ``as_of`` layers an additional, independent pruning check on top: a
-    chunk none of whose rows could be visible as of that transaction time is
-    skipped regardless of what the predicate says. ``as_of=None`` (no AS OF
-    clause) disables this check entirely, preserving prior behavior exactly.
-
-    ``as_of_index`` is an optional fast path (see ``ChunkStore.labels_visible_as_of``):
-    when both it and ``as_of`` are given, the AS-OF-invisible labels are
-    identified by a single O(log n) bisect against a maintained sorted index
-    instead of a per-label ``label_visible_as_of`` computation, and --
-    crucially -- ``predicate.evaluate_against_label`` (which can recurse
-    through multiple AND'd clauses) is only ever called on labels that
-    survive that cut, not on every label regardless of AS OF visibility.
-    The result of that one bisect is then consulted as an O(1)
-    membership test while iterating ``labels`` in their original order, so
-    the fast path costs one index lookup plus a linear scan of cheap checks
-    -- not the O(n) per-label computation it's replacing -- while still
-    producing results in the same order the plain linear scan below would.
-    Omitting ``as_of_index`` (the default) is byte-for-byte identical to
-    that plain linear scan; every existing caller that only passes ``as_of``
-    is unaffected.
-
-    ``price_pruning_enabled=False`` (pass whenever the store has any
-    correction chunk -- see ``ChunkStore.has_corrections``) disables price
-    pruning specifically, since a correction chunk's own price zone map
-    failing a value predicate must never hide it from candidacy: doing so
-    would silently let a stale base row win over its correction. Symbol and
-    time pruning are unaffected either way.
+    Only a ``False`` from ``evaluate_against_label`` skips a chunk; input order
+    is preserved in both result lists. ``as_of`` additionally skips chunks with
+    no row visible at that transaction time (via ``as_of_index`` when given).
+    ``price_pruning_enabled=False`` is required when the store has corrections,
+    so a correction chunk's price zone map can never hide it from candidacy.
     """
 
     if not isinstance(predicate, PredicateNode):

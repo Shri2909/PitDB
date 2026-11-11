@@ -1,10 +1,18 @@
-"""Translate the supported SQL WHERE subset into predicate-tree nodes."""
+"""Translate the supported SQL WHERE subset into predicate-tree nodes.
+
+A date-only literal (``'2024-01-01'`` or ``'20240101'``) names the whole day,
+so comparisons are rewritten onto day boundaries and ``TIMESTAMP AS OF`` means
+the end of that day. A literal with a time component is an exact instant.
+``IN`` rejects date-only datetimes; bare numbers are never timestamps or
+symbols. All literal problems raise :class:`UnsupportedQueryError`.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 
+import pandas as pd
 import sqlglot
 from sqlglot import expressions as exp
 from sqlglot.tokens import Token, Tokenizer, TokenType
@@ -12,7 +20,9 @@ from sqlglot.tokens import Token, Tokenizer, TokenType
 from src.query.predicate import AlwaysTrue, And, Comparison, In, PredicateNode
 from src.query.schema import (
     COLUMN_LABEL_MAP,
+    MAX_TIMESTAMP,
     SCHEMA,
+    SUPPORTED_TIMESTAMP_RANGE,
     ColumnType,
     is_date_only,
     parse_literal,
@@ -20,8 +30,11 @@ from src.query.schema import (
 )
 
 
-class UnsupportedQueryError(Exception):
-    """Raised when SQL falls outside this project's bounded query grammar."""
+class UnsupportedQueryError(ValueError):
+    """Raised for SQL outside the bounded grammar or a literal that cannot be bound.
+
+    Subclasses ``ValueError``.
+    """
 
 
 _SWAPPED_OPERATOR = {
@@ -97,41 +110,16 @@ def parse_where_clause(sql: str) -> PredicateNode:
 
 
 def _is_of_token(token: Token) -> bool:
-    # "OF" is not a reserved keyword in sqlglot's tokenizer -- it comes
-    # through as a plain TokenType.VAR, same as any identifier.
+    # sqlglot tokenizes OF as a plain VAR, not a keyword.
     return token.token_type == TokenType.VAR and token.text.upper() == "OF"
 
 
 def extract_as_of(sql: str) -> tuple[str, datetime | None]:
     """Strip a ``TIMESTAMP AS OF '<literal>'`` clause, returning (sql, as_of).
 
-    This project's sole supported time-travel form is a modifier immediately
-    after ``FROM data``, rather than a WHERE predicate. That placement is how
-    this function locates it: it
-    tokenizes the raw SQL (lexical analysis only -- never a full parse, and
-    never a re-serialization through a different dialect) and looks at the
-    single token immediately following the table name. Anywhere else, a bare
-    ``TIMESTAMP`` token is just an ordinary column reference (this project's
-    own queries write ``WHERE timestamp >= ...`` constantly, and "timestamp"
-    tokenizes as ``TokenType.TIMESTAMP`` in that position too) -- so matching
-    only makes sense pinned to this one structural position.
-
-    An earlier version located the clause with a regex restricted to the SQL
-    text before the first bare ``WHERE`` match. That was defeated by a
-    ``WHERE`` before the real one -- e.g. a leading SQL comment containing
-    the ordinary English word "where" -- silently truncating the search
-    before it ever reached the real clause. Before that, an even earlier
-    version parsed the *entire* statement under the Databricks dialect and
-    re-serialized the remainder, which corrupted quoted identifiers and
-    escaped-quote literals in the WHERE clause. Tokenizing sidesteps both
-    failure modes: comments are discarded before tokens are ever produced,
-    and a string literal (however it's quoted or escaped) always comes
-    through as one opaque ``STRING`` token, never text a keyword search
-    could be fooled by. The matched span's exact character offsets in the
-    *original* SQL text are used to excise it, leaving every other character
-    -- including exact quoting elsewhere in the query -- untouched before
-    handing the remainder to the unmodified, default-dialect
-    ``parse_where_clause``.
+    The clause is only recognized immediately after ``FROM data`` by tokenizing
+    (never fully parsing) the raw SQL, so comments, quoting and string literals
+    elsewhere in the query are left untouched.
     """
 
     tokens = _tokenize_bounded(sql)
@@ -161,9 +149,12 @@ def extract_as_of(sql: str) -> tuple[str, datetime | None]:
             raise UnsupportedQueryError("AS OF requires a literal timestamp")
 
         literal_token = tokens[literal_index]
-        as_of = parse_literal(literal_token.text, "timestamp", decoded=True)
+        as_of = _parse_literal_or_raise(literal_token.text, "timestamp")
         if not isinstance(as_of, datetime):
             raise UnsupportedQueryError("AS OF literal did not parse to a timestamp")
+        if is_date_only(literal_token.text, decoded=True):
+            # AS OF a calendar day means "as known at the end of that day".
+            as_of = _end_of_day(as_of)
 
         start, end = marker.start, literal_token.end
         return sql[:start] + sql[end + 1 :], as_of
@@ -186,9 +177,6 @@ def extract_as_of(sql: str) -> tuple[str, datetime | None]:
 def _validate_statement_scope(parsed: exp.Expression) -> None:
     """Reject full-statement features that the executor cannot implement."""
 
-    # Reject subqueries even if their WHERE is the first exp.Where found. This
-    # keeps parse_one(...).find(exp.Where) from accidentally treating an inner
-    # query's predicate as the outer statement's predicate.
     if parsed.find(exp.Subquery) is not None or parsed.find(exp.Exists) is not None:
         raise UnsupportedQueryError("Subqueries are not supported.")
 
@@ -308,8 +296,6 @@ def _convert_expression(node: exp.Expression) -> PredicateNode:
             return _convert_comparison(node, operator)
 
     if isinstance(node, exp.In):
-        # sqlglot stores IN (SELECT ...) under the query argument rather than
-        # expressions. It was rejected above; this guard documents the shape.
         if node.args.get("query") is not None:
             raise UnsupportedQueryError("Subqueries are not supported.")
         _reject_unused_arguments(node, {"this", "expressions"})
@@ -319,12 +305,7 @@ def _convert_expression(node: exp.Expression) -> PredicateNode:
         column = _extract_column(node.this)
         label_field = COLUMN_LABEL_MAP[column]
         if SCHEMA[column] is ColumnType.DATETIME:
-            # Unlike `=` (see _convert_comparison), IN has no whole-day
-            # expansion for a date-only literal -- that would need an OR of
-            # per-value ranges, which this project's grammar intentionally
-            # never constructs (OR across columns is explicitly rejected
-            # above). Silently matching only exact midnight would drop every
-            # intraday row for that date, so reject explicitly instead.
+            # No whole-day expansion exists for IN without OR, so reject explicitly.
             for value_node in node.expressions:
                 if _literal_is_date_only(value_node):
                     raise UnsupportedQueryError(
@@ -344,34 +325,25 @@ def _convert_comparison(node: exp.Expression, operator: str) -> PredicateNode:
     label_field = COLUMN_LABEL_MAP[column]
     value = _extract_literal(literal_node, column)
 
-    # SQL date equality means the complete calendar day. An exact midnight
-    # comparison would incorrectly return no intraday rows.
-    if (
-        normalized_operator == "="
-        and SCHEMA[column] is ColumnType.DATETIME
-        and _literal_is_date_only(literal_node)
-    ):
+    # A date-only literal means the whole day, so rewrite onto day boundaries.
+    if SCHEMA[column] is ColumnType.DATETIME and _literal_is_date_only(literal_node):
         if not isinstance(value, datetime):
             raise UnsupportedQueryError(
-                "date-only equality did not produce a datetime literal"
+                "date-only comparison did not produce a datetime literal"
             )
-        try:
-            next_day = value + timedelta(days=1)
-        except (ValueError, OverflowError) as exc:
-            raise UnsupportedQueryError(
-                "Date equality exceeds the datetime range"
-            ) from exc
-        return And(
-            [
-                Comparison(column, ">=", value, label_field),
-                Comparison(
-                    column,
-                    "<",
-                    next_day,
-                    label_field,
-                ),
-            ]
-        )
+        if normalized_operator in {"<", ">="}:
+            return Comparison(column, normalized_operator, value, label_field)
+        next_day = _next_day(value)
+        if normalized_operator == "=":
+            return And(
+                [
+                    Comparison(column, ">=", value, label_field),
+                    Comparison(column, "<", next_day, label_field),
+                ]
+            )
+        if normalized_operator == "<=":
+            return Comparison(column, "<", next_day, label_field)
+        return Comparison(column, ">=", next_day, label_field)  # ">"
 
     return Comparison(column, normalized_operator, value, label_field)
 
@@ -410,14 +382,15 @@ def _extract_column(node: exp.Expression) -> str:
         raise UnsupportedQueryError(
             f"expected a column reference, found {type(node).__name__}"
         )
-    # Qualifiers have already been validated against the sole FROM source.
     return validate_column(node.name)
 
 
-def _literal_text(node: exp.Expression) -> str:
+def _literal_text(node: exp.Expression) -> tuple[str, bool]:
+    """Return a literal's decoded text and whether it was a quoted string."""
+
     node = _unwrap_parentheses(node)
     if isinstance(node, exp.Literal):
-        return str(node.this)
+        return str(node.this), bool(node.is_string)
 
     if isinstance(node, exp.Neg):
         inner = _unwrap_parentheses(node.this)
@@ -425,23 +398,70 @@ def _literal_text(node: exp.Expression) -> str:
             raise UnsupportedQueryError(
                 "unary minus is supported only for numeric literals"
             )
-        return f"-{inner.this}"
+        return f"-{inner.this}", False
 
     raise UnsupportedQueryError(f"expected a literal, found {type(node).__name__}")
+
+
+def _parse_literal_or_raise(text: str, column: str) -> Any:
+    """Parse decoded literal text, raising UnsupportedQueryError on any failure."""
+
+    try:
+        return parse_literal(text, column, decoded=True)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise UnsupportedQueryError(str(exc)) from exc
 
 
 def _extract_literal(node: exp.Expression, column: str) -> Any:
     """Parse a literal using the canonical column's declared schema type."""
 
+    text, is_string = _literal_text(node)
+    if not is_string and SCHEMA[column] is ColumnType.STRING:
+        raise UnsupportedQueryError(
+            f"column {column!r} requires a quoted string literal; received "
+            f"the number {text}"
+        )
+    if not is_string and SCHEMA[column] is ColumnType.DATETIME:
+        raise UnsupportedQueryError(
+            f"ambiguous numeric literal {text} for column {column!r}; "
+            "write a quoted ISO 8601 date or timestamp such as '2024-01-01'"
+        )
+    return _parse_literal_or_raise(text, column)
+
+
+def _next_day(value: datetime) -> datetime:
+    """Midnight that ends the calendar day starting at ``value``."""
+
     try:
-        return parse_literal(_literal_text(node), column, decoded=True)
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise UnsupportedQueryError(str(exc)) from exc
+        result = pd.Timestamp(value) + pd.Timedelta(days=1)
+        return result.as_unit("ns")
+    except (ValueError, OverflowError) as exc:
+        raise UnsupportedQueryError(
+            "date literal is too close to the end of the supported datetime "
+            f"range ({SUPPORTED_TIMESTAMP_RANGE}) to compare by whole day"
+        ) from exc
+
+
+def _end_of_day(value: datetime) -> datetime:
+    """Last representable nanosecond of the day starting at ``value``.
+
+    Clamped to the largest representable timestamp: an AS OF cutoff at or past
+    it already makes every transaction visible, so clamping is exact.
+    """
+
+    try:
+        return _next_day(value) - pd.Timedelta(1, unit="ns")
+    except UnsupportedQueryError:
+        return MAX_TIMESTAMP
 
 
 def _literal_is_date_only(node: exp.Expression) -> bool:
     node = _unwrap_parentheses(node)
-    return isinstance(node, exp.Literal) and is_date_only(str(node.this), decoded=True)
+    return (
+        isinstance(node, exp.Literal)
+        and bool(node.is_string)
+        and is_date_only(str(node.this), decoded=True)
+    )
 
 
 __all__ = [

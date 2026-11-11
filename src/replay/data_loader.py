@@ -1,16 +1,8 @@
-"""Load and validate cached OHLCV CSV data for sequential replay.
-
-Timestamps are normalized to timezone-aware ``datetime64[ns, UTC]``. Choosing
-UTC gives daily and intraday inputs one unambiguous timeline before they reach
-the replay and chunking layers.
-
-The merged loader accepts one explicit file rather than scanning a directory.
-This prevents per-symbol intermediates from being counted alongside merged
-files and prevents daily and one-minute datasets from being mixed accidentally.
-"""
+"""Load and validate cached OHLCV CSV data (timestamps normalized to UTC)."""
 
 from __future__ import annotations
 
+import csv
 import warnings
 from pathlib import Path
 
@@ -22,6 +14,7 @@ SYMBOL_COLUMN = "symbol"
 NUMERIC_COLUMNS = ("open", "high", "low", "close", "volume")
 SINGLE_SYMBOL_COLUMNS = (TIMESTAMP_COLUMN, *NUMERIC_COLUMNS)
 DATASET_COLUMNS = (TIMESTAMP_COLUMN, SYMBOL_COLUMN, *NUMERIC_COLUMNS)
+_MAX_SYMBOLS_SHOWN = 10
 
 
 def _read_csv(filepath: Path) -> pd.DataFrame:
@@ -29,10 +22,31 @@ def _read_csv(filepath: Path) -> pd.DataFrame:
     if not path.is_file():
         raise FileNotFoundError(f"CSV file does not exist: {path}")
 
+    # Read symbols as literal text so keys like "NA" or "00123" survive.
+    with path.open(encoding="utf-8-sig", newline="") as stream:
+        header = next(
+            (row for row in csv.reader(stream) if any(field.strip() for field in row)),
+            [],
+        )
+    converters = {name: str for name in header if name.strip().lower() == SYMBOL_COLUMN}
     try:
-        return pd.read_csv(path)
+        df = pd.read_csv(path, converters=converters, encoding="utf-8-sig")
     except pd.errors.EmptyDataError as exc:
         raise ValueError(f"CSV file is empty and has no columns: {path}") from exc
+
+    # Drop all-null "Unnamed: N" columns created by a trailing header comma.
+    stray = [
+        column
+        for column in df.columns
+        if isinstance(column, str)
+        and column.startswith("Unnamed:")
+        and df[column].isna().all()
+    ]
+    if stray:
+        df = df.drop(columns=stray)
+    if len(df) == 0:
+        raise ValueError(f"CSV file has a header but no data rows: {path}")
+    return df
 
 
 def _normalize_columns(df: pd.DataFrame) -> None:
@@ -64,17 +78,11 @@ def _reject_completely_null_columns(df: pd.DataFrame) -> None:
 
 def _parse_timestamp_utc(df: pd.DataFrame) -> None:
     try:
-        # format="ISO8601" (not "mixed"): "mixed" infers each row's date
-        # format independently, which silently swaps day/month on ambiguous
-        # non-ISO input (e.g. mixed DD/MM data can parse as inconsistent
-        # months row to row). The actual data source (yfinance via
-        # data/download_data.py) always produces ISO 8601 timestamps, so
-        # requiring that format removes the ambiguity instead of guessing.
+        # ISO8601, not "mixed": "mixed" can silently swap day/month per row.
         parsed = pd.to_datetime(
             df[TIMESTAMP_COLUMN], errors="raise", utc=True, format="ISO8601"
         )
-        # Make the resolution part of the public loader contract rather than
-        # depending on pandas' input-dependent datetime resolution.
+        # Pin nanosecond resolution regardless of pandas' input-dependent default.
         parsed = parsed.astype("datetime64[ns, UTC]")
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(
@@ -88,30 +96,88 @@ def _parse_timestamp_utc(df: pd.DataFrame) -> None:
     df[TIMESTAMP_COLUMN] = parsed
 
 
+# Largest integer magnitude float64 represents exactly.
+_FLOAT64_EXACT_INT = 2**53
+# NaN is tolerated only in volume (a missing volume is common in real feeds);
+# a missing price is rejected because every price column feeds chunk labels.
+_PRICE_COLUMNS = ("open", "high", "low", "close")
+
+
+def _reject_boolean_column(series: pd.Series, column: str) -> None:
+    is_bool = pd.api.types.is_bool_dtype(series.dtype)
+    if not is_bool and series.dtype == object:
+        is_bool = bool(series.map(lambda v: isinstance(v, (bool, np.bool_))).any())
+    if is_bool:
+        raise ValueError(
+            f"numeric column '{column}' contains boolean values; "
+            "booleans are not accepted as numbers"
+        )
+
+
+def _reject_non_finite(values: pd.Series, column: str) -> None:
+    array = values.to_numpy(dtype=np.float64, na_value=np.nan)
+    infinite = np.isinf(array)
+    if infinite.any():
+        row = int(np.argmax(infinite))
+        raise ValueError(
+            f"numeric column '{column}' contains non-finite values "
+            f"(+/-inf); first at data row {row}: {array[row]}"
+        )
+    if column in _PRICE_COLUMNS:
+        missing = np.isnan(array)
+        if missing.any():
+            row = int(np.argmax(missing))
+            raise ValueError(
+                f"price column '{column}' contains missing/NaN values; "
+                f"first at data row {row} ({int(missing.sum())} total)"
+            )
+
+
+def _cast_is_lossy(series: pd.Series) -> bool:
+    """Return whether casting a non-float64 column to float64 can lose data."""
+    dtype = series.dtype
+    if pd.api.types.is_float_dtype(dtype):
+        # float16/float32 widen exactly to float64.
+        return False
+    if pd.api.types.is_integer_dtype(dtype):
+        non_null = series.dropna()
+        if non_null.empty:
+            return False
+        magnitude = non_null.abs().max()
+        return bool(magnitude > _FLOAT64_EXACT_INT)
+    # Text/object/other inputs are an unexpected upstream dtype drift.
+    return True
+
+
 def _coerce_numeric_columns(df: pd.DataFrame) -> None:
     for column in NUMERIC_COLUMNS:
-        if df[column].dtype == np.dtype("float64"):
-            continue
+        series = df[column]
+        _reject_boolean_column(series, column)
 
-        original_dtype = df[column].dtype
-        try:
-            converted = pd.to_numeric(df[column], errors="raise").astype(np.float64)
-        except (TypeError, ValueError, OverflowError) as exc:
-            raise ValueError(
-                f"numeric column '{column}' cannot be converted to float64"
-            ) from exc
+        if series.dtype != np.dtype("float64"):
+            original_dtype = series.dtype
+            lossy = _cast_is_lossy(series)
+            try:
+                converted = pd.to_numeric(series, errors="raise").astype(np.float64)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(
+                    f"numeric column '{column}' cannot be converted to float64"
+                ) from exc
+            if lossy:
+                warnings.warn(
+                    f"casting numeric column '{column}' from {original_dtype} "
+                    "to float64 may lose precision or change type",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+            df[column] = converted
+            series = converted
 
-        warnings.warn(
-            f"casting numeric column '{column}' from {original_dtype} to float64",
-            RuntimeWarning,
-            stacklevel=3,
-        )
-        df[column] = converted
+        _reject_non_finite(series, column)
 
 
 def _validate_symbol_column(df: pd.DataFrame) -> None:
     """Reject unusable keys without changing valid symbol strings."""
-
     symbol = df[SYMBOL_COLUMN]
     if symbol.isna().any():
         count = int(symbol.isna().sum())
@@ -135,13 +201,10 @@ def _validate_symbol_column(df: pd.DataFrame) -> None:
 
 
 def validate_schema(df: pd.DataFrame) -> None:
-    """Validate and normalize the merged OHLCV schema in place.
+    """Validate the merged OHLCV schema and cast numeric columns to float64 in place.
 
-    Required numeric columns are cast to ``float64`` when conversion is safe;
-    every such cast emits ``RuntimeWarning`` so upstream dtype drift is visible.
-    All structural or non-convertible schema problems raise ``ValueError``.
+    Lossy casts warn; booleans, infinities and NaN prices raise ``ValueError``.
     """
-
     if not isinstance(df, pd.DataFrame):
         raise TypeError("validate_schema expects a pandas DataFrame")
 
@@ -158,7 +221,6 @@ def validate_schema(df: pd.DataFrame) -> None:
 
 def load_single_symbol(filepath: Path) -> pd.DataFrame:
     """Load one symbol CSV into a clean, UTC-normalized DataFrame."""
-
     df = _read_csv(filepath)
     _normalize_columns(df)
     _require_columns(df, SINGLE_SYMBOL_COLUMNS)
@@ -179,13 +241,8 @@ def load_single_symbol(filepath: Path) -> pd.DataFrame:
     return df
 
 
-def load_dataset(merged_csv_path: Path) -> pd.DataFrame:
-    """Load one named merged dataset for direct use by ``ReplayHarness``.
-
-    No directory globbing is performed: one daily or one intraday merged file
-    is loaded at a time, preserving its intended granularity and chunking model.
-    """
-
+def load_dataset(merged_csv_path: Path, *, verbose: bool = True) -> pd.DataFrame:
+    """Load one merged dataset CSV for ``ReplayHarness``."""
     df = _read_csv(merged_csv_path)
     _normalize_columns(df)
     _require_columns(df, DATASET_COLUMNS)
@@ -216,11 +273,15 @@ def load_dataset(merged_csv_path: Path) -> pd.DataFrame:
     symbols = sorted(df[SYMBOL_COLUMN].dropna().unique().tolist())
     date_start = df[TIMESTAMP_COLUMN].min().isoformat()
     date_end = df[TIMESTAMP_COLUMN].max().isoformat()
-    print(
-        f"Loaded {len(df):,} rows | "
-        f"symbols ({len(symbols)}): {', '.join(symbols)} | "
-        f"date range: {date_start} to {date_end}"
-    )
+    if verbose:
+        shown = ", ".join(symbols[:_MAX_SYMBOLS_SHOWN])
+        if len(symbols) > _MAX_SYMBOLS_SHOWN:
+            shown += f", ... (+{len(symbols) - _MAX_SYMBOLS_SHOWN:,} more)"
+        print(
+            f"Loaded {len(df):,} rows | "
+            f"symbols ({len(symbols):,}): {shown} | "
+            f"date range: {date_start} to {date_end}"
+        )
     return df
 
 

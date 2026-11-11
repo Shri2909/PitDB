@@ -14,12 +14,7 @@ from src.store.validation import RESERVED_VALUE_COLUMNS, timestamp_value
 
 @dataclass(frozen=True)
 class Chunk:
-    """One independently queryable group of raw, column-oriented rows.
-
-    ``column_data`` contains one column's raw float64 bytes after another;
-    ``column_byte_lengths`` is the framing needed to split those streams
-    again.
-    """
+    """One independently queryable group of raw, column-oriented rows."""
 
     label: ChunkLabel
     column_data: bytes
@@ -27,18 +22,11 @@ class Chunk:
     num_columns: int
     column_names: tuple[str, ...] | list[str]
     timestamps: tuple[datetime, ...] | list[datetime]
-    # None for a base chunk (transaction time is derived from each row's own
-    # timestamp -- see src/query/versioning.py). A list, positionally aligned
-    # with `timestamps` and the same length, for a correction chunk (single
-    # or merged by ChunkStore.compact_corrections): a chunk merging several
-    # corrections holds rows learned at different transaction times, so a
-    # single per-chunk scalar can no longer answer "when was this row
-    # learned" -- only a per-row list can.
+    # None for a base chunk; for a correction chunk, one entry per row.
     correction_transaction_times: tuple[datetime, ...] | list[datetime] | None = None
 
     def __post_init__(self) -> None:
-        # Finalized payload and framing cannot drift away from their zone map.
-        # Accept sequence inputs, detach them, and publish immutable tuples.
+        # Detach sequence inputs into immutable tuples.
         object.__setattr__(self, "column_byte_lengths", tuple(self.column_byte_lengths))
         object.__setattr__(self, "column_names", tuple(self.column_names))
         object.__setattr__(
@@ -54,6 +42,53 @@ class Chunk:
                 ),
             )
         self._validate_structure()
+        self._validate_invariants()
+
+    def _validate_invariants(self) -> None:
+        """Check cross-field invariants between rows, label and transaction times."""
+        timestamps = self.timestamps
+        if timestamps:
+            try:
+                for earlier, later in zip(timestamps, timestamps[1:]):
+                    if later < earlier:
+                        raise ValueError(
+                            "chunk timestamps must be in non-decreasing order"
+                        )
+                if self.label.time_start != timestamps[0]:
+                    raise ValueError(
+                        "label.time_start must equal the first row timestamp"
+                    )
+                if timestamps[-1] > self.label.time_end:
+                    raise ValueError("row timestamps must not exceed label.time_end")
+            except TypeError as exc:
+                raise ValueError(
+                    "chunk timestamps and label time range must share "
+                    "timezone awareness"
+                ) from exc
+
+        if self.correction_transaction_times is None:
+            return
+        start = self.label.transaction_time_start
+        end = self.label.transaction_time_end
+        assert start is not None and end is not None
+        try:
+            for timestamp, transaction_time in zip(
+                timestamps, self.correction_transaction_times
+            ):
+                if transaction_time < start or transaction_time > end:
+                    raise ValueError(
+                        "each correction transaction time must lie within "
+                        "the label's transaction-time range"
+                    )
+                if transaction_time < timestamp:
+                    raise ValueError(
+                        "a correction's transaction time cannot precede its "
+                        "row timestamp"
+                    )
+        except TypeError as exc:
+            raise ValueError(
+                "transaction times and row timestamps must share timezone awareness"
+            ) from exc
 
     def _validate_structure(self) -> None:
         if not isinstance(self.label, ChunkLabel):
@@ -132,17 +167,7 @@ class Chunk:
                 )
 
     def column_arrays(self) -> dict[str, np.ndarray]:
-        """Reassemble each column's raw bytes into plain float64 arrays.
-
-        This is the byte-unpacking core both ``decompress()`` and callers
-        that only need the underlying arrays (not a full DataFrame, e.g.
-        ``ChunkStore.compact_corrections``) rely on. Skipping straight to
-        this instead of ``decompress()`` avoids pandas' DataFrame
-        construction machinery (dtype inference, index building, column
-        management) entirely -- real, measured overhead when all a caller
-        wants is the raw values for a chunk with few rows.
-        """
-
+        """Reassemble each column's raw bytes into plain float64 arrays."""
         self._validate_structure()
         columns: dict[str, np.ndarray] = {}
         offset = 0
@@ -151,9 +176,7 @@ class Chunk:
             self.column_names, self.column_byte_lengths
         ):
             end = offset + byte_length
-            # np.frombuffer returns a read-only view into the immutable bytes
-            # object; .copy() gives callers an owned, writable array matching
-            # the previous decode path's behavior.
+            # frombuffer is read-only; copy to give callers a writable array.
             column_values = np.frombuffer(
                 self.column_data[offset:end], dtype=np.float64
             ).copy()
@@ -169,11 +192,9 @@ class Chunk:
 
     def decompress(self) -> pd.DataFrame:
         """Reassemble each column's raw bytes and reconstruct row order."""
-
         columns = self.column_arrays()
 
-        # Dict insertion order makes the reconstructed schema deterministic:
-        # timestamp, symbol, then the original ordered value columns.
+        # Insertion order fixes the schema: timestamp, symbol, then value columns.
         frame_data: dict[str, object] = {
             "timestamp": list(self.timestamps),
             "symbol": [self.label.symbol] * self.label.row_count,

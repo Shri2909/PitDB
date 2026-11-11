@@ -1,9 +1,4 @@
-"""Strictly sequential replay adapters for streaming compression.
-
-The public surface deliberately omits length, indexing, peeking, and access to
-the source DataFrame. Consumers can observe only the current row when it is
-yielded, matching a live feed where future values do not yet exist.
-"""
+"""Strictly sequential, no-lookahead replay of a DataFrame."""
 
 from __future__ import annotations
 
@@ -14,17 +9,14 @@ import numpy as np
 import pandas as pd
 
 from src.replay.data_loader import _validate_symbol_column
+from src.store.chunk_builder import DEFAULT_VALUE_COLUMNS
 from src.store.validation import RESERVED_VALUE_COLUMNS
-
-DEFAULT_VALUE_COLUMNS = ("open", "high", "low", "close", "volume")
 
 
 class ReplayHarness(Iterator[dict[str, Any]]):
-    """Yield DataFrame rows once, in their existing order, without lookahead.
+    """Yield DataFrame rows in order without lookahead.
 
-    The DataFrame is retained by reference rather than copied, keeping the
-    loader/replay boundary memory-efficient. Callers must therefore treat their
-    source DataFrame as immutable for the lifetime of the harness.
+    The DataFrame is held by reference, so callers must not mutate it.
     """
 
     def __init__(
@@ -40,11 +32,18 @@ class ReplayHarness(Iterator[dict[str, Any]]):
                 "DataFrame contains duplicate column names: " + ", ".join(duplicates)
             )
 
+        if isinstance(value_columns, (str, bytes)):
+            raise TypeError(
+                "value_columns must be a list of column names, not a bare string; "
+                f"use [{value_columns!r}]"
+            )
         selected = (
             list(DEFAULT_VALUE_COLUMNS)
             if value_columns is None
             else list(value_columns)
         )
+        if not selected:
+            raise ValueError("value_columns must not be empty")
         if any(
             not isinstance(column, str) or not column.strip() for column in selected
         ):
@@ -57,13 +56,16 @@ class ReplayHarness(Iterator[dict[str, Any]]):
                 "value_columns contain reserved columns: " + ", ".join(conflicts)
             )
 
+        # Fail early: the store derives price labels from `close`.
+        if "close" not in selected:
+            raise ValueError("value_columns must include 'close' for price labels")
+
         required = {"timestamp", "symbol", *selected}
         missing = sorted(required.difference(df.columns))
         if missing:
             raise ValueError("missing replay columns: " + ", ".join(missing))
 
-        # Validate all keys before exposing the first row so a later malformed
-        # symbol cannot cause a partially ingested replay.
+        # Validate every key up front to avoid a partially ingested replay.
         _validate_symbol_column(df)
 
         self._df = df
@@ -72,16 +74,10 @@ class ReplayHarness(Iterator[dict[str, Any]]):
 
     def has_next(self) -> bool:
         """Return whether one more sequential row can be consumed."""
-
         return self._index < len(self._df)
 
     def next_row(self) -> dict[str, Any]:
-        """Return and consume the current row.
-
-        The numeric array is a private float64 copy, so downstream compression
-        cannot mutate the source DataFrame accidentally.
-        """
-
+        """Return and consume the current row (values are a private float64 copy)."""
         if not self.has_next():
             raise StopIteration
 

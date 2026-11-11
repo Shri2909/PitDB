@@ -1,9 +1,7 @@
 """Independent temporal oracle and regression probes.
 
-Expected results use only the original input records, Python comparisons,
-and a dictionary of visible versions. No parser, production predicate,
-version resolver, chunk label, baseline engine, or decompressor computes
-the expected query result.
+Expected results come only from the input records and plain Python, never
+from production query code.
 """
 
 from __future__ import annotations
@@ -154,8 +152,7 @@ def test_as_of_index_against_independent_raw_row_visibility(
     for compact in (False, True):
         if compact:
             store.compact_corrections()
-        # Independently scan each chunk's actual row transaction timestamps;
-        # deliberately do not call label_visible_as_of or evaluate_pushdown.
+        # Scan row transaction times directly, bypassing label_visible_as_of/pushdown.
         visible = set()
         for chunk in store.chunks:
             transaction_times = (
@@ -241,8 +238,7 @@ def test_correction_only_keys_with_out_of_order_transaction_arrival():
                 ("price > 100", lambda r: r.values[3] > 100),
             ):
                 frame = QueryExecutor(store).execute(sql(cutoff, where)).data
-                # Direct list comparison also verifies the resolver's
-                # documented timestamp/symbol result ordering.
+                # List comparison also checks the resolver's result ordering.
                 assert list(frame.itertuples(index=False, name=None)) == expected(
                     records, cutoff, matches
                 )
@@ -258,8 +254,7 @@ def test_as_of_timezone_literal_alignment(aware_store):
     store, records = ChunkStore(), []
     add_base(store, records, timestamp, "AAPL", 100)
     store.flush_all()
-    # Existing exact-filter and label logic explicitly support matching
-    # awareness to the stored timestamps. AS OF should use the same rule.
+    # AS OF should align awareness to stored timestamps like exact filters do.
     result = QueryExecutor(store).execute(sql(cutoff))
     assert actual(result.data) == expected(records, timestamp + timedelta(days=1))
 

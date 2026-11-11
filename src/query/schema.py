@@ -1,12 +1,8 @@
-"""Canonical query schema, SQL aliases, and typed literal conversion.
-
-Aliases exist only at the SQL-facing boundary. Once :func:`validate_column`
-returns, every parser and executor component works exclusively with real
-columns produced by ``Chunk.decompress()``.
-"""
+"""Canonical query schema, SQL aliases, and typed literal conversion."""
 
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime
 from enum import Enum
@@ -21,7 +17,6 @@ class ColumnType(Enum):
     INTEGER = "integer"
 
 
-# These names exactly match the columns reconstructed by Chunk.decompress().
 SCHEMA: dict[str, ColumnType] = {
     "symbol": ColumnType.STRING,
     "timestamp": ColumnType.DATETIME,
@@ -33,7 +28,6 @@ SCHEMA: dict[str, ColumnType] = {
 }
 
 
-# SQL conveniences are resolved before a Comparison/In node is constructed.
 ALIAS_MAP: dict[str, str] = {
     "date": "timestamp",
     "price": "close",
@@ -42,8 +36,7 @@ ALIAS_MAP: dict[str, str] = {
 VALID_COLUMNS = set(SCHEMA) | set(ALIAS_MAP)
 
 
-# Keys are canonical DataFrame columns only. ``price`` below names the label
-# category backed by ChunkLabel.min_price/max_price; it is not a SQL alias.
+# "price" is the label category backed by min_price/max_price, not a SQL alias.
 COLUMN_LABEL_MAP: dict[str, str | None] = {
     "symbol": "symbol",
     "timestamp": "time",
@@ -55,7 +48,19 @@ COLUMN_LABEL_MAP: dict[str, str | None] = {
 }
 
 
-_DATE_ONLY_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
+# Extended (2024-01-01) or compact (20240101) date; ASCII digits only.
+_DATE_ONLY_PATTERN = re.compile(r"(?:[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]{8})\Z")
+_FLOAT_PATTERN = re.compile(
+    r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z"
+)
+_INTEGER_PATTERN = re.compile(r"[+-]?[0-9]+\Z")
+
+# Out-of-range literals are rejected, not clamped (unsound for <, >=, =).
+MIN_TIMESTAMP = pd.Timestamp.min
+MAX_TIMESTAMP = pd.Timestamp.max
+SUPPORTED_TIMESTAMP_RANGE = (
+    f"{MIN_TIMESTAMP.isoformat()} to {MAX_TIMESTAMP.isoformat()}"
+)
 
 
 def _unquote_sql_literal(value: str) -> str:
@@ -74,12 +79,7 @@ def _unquote_sql_literal(value: str) -> str:
 
 
 def validate_column(name: str) -> str:
-    """Validate a SQL column reference and return its canonical DataFrame name.
-
-    This function must be called while parsing, immediately after extracting a
-    column name from the SQL AST. Downstream query nodes must never retain an
-    alias such as ``date`` or ``price``.
-    """
+    """Validate a SQL column reference and return its canonical DataFrame name."""
 
     if not isinstance(name, str):
         raise ValueError("column name must be a string")
@@ -93,12 +93,9 @@ def validate_column(name: str) -> str:
 
 
 def is_date_only(value: str, *, decoded: bool = False) -> bool:
-    """Return whether a SQL literal has exactly ``YYYY-MM-DD`` syntax.
+    """Return whether a SQL literal is ``YYYY-MM-DD`` or ``YYYYMMDD``.
 
-    Quotes and surrounding whitespace are ignored for raw SQL text. With
-    ``decoded=True``, inspect the already-decoded AST content exactly. This
-    syntactic flag is separate from :func:`parse_literal`; the parser uses it
-    to expand date equality into the appropriate whole-day interval.
+    With ``decoded=True`` the value is already unquoted and inspected as is.
     """
 
     if not isinstance(value, str):
@@ -110,15 +107,9 @@ def is_date_only(value: str, *, decoded: bool = False) -> bool:
 def parse_literal(
     value: str, column: str, *, decoded: bool = False
 ) -> datetime | float | str:
-    """Convert a SQL literal according to an already-canonical column.
+    """Convert a SQL literal for an already-canonical column.
 
-    ``column`` is intentionally not passed through :func:`validate_column`:
-    accepting an alias here would allow deferred alias resolution to creep into
-    execution. Callers must canonicalize once, at parse time, before invoking
-    this function.
-
-    ``decoded=True`` is for AST/token values whose SQL quoting has already been
-    removed. Preserve their contents exactly instead of unquoting a second time.
+    ``decoded=True`` means the value's SQL quoting was already removed.
     """
 
     if not isinstance(value, str):
@@ -133,40 +124,51 @@ def parse_literal(
         return literal
 
     if column_type is ColumnType.DATETIME:
-        # datetime.fromisoformat accepts date-only values as midnight. Normalize
-        # the common SQL/ISO UTC suffix explicitly for portable behavior.
         normalized = literal[:-1] + "+00:00" if literal.endswith("Z") else literal
         try:
-            # Validate ISO syntax, then retain nanoseconds rather than
-            # truncating a supported literal to Python's microseconds.
+            # fromisoformat validates syntax; pd.Timestamp below keeps nanoseconds.
             datetime.fromisoformat(normalized)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError(
+                f"invalid datetime literal {value!r} for column {column!r}"
+            ) from exc
+        try:
             return pd.Timestamp(normalized).as_unit("ns")
+        except pd.errors.OutOfBoundsDatetime as exc:
+            raise ValueError(
+                f"datetime literal {value!r} for column {column!r} is outside the "
+                f"supported range ({SUPPORTED_TIMESTAMP_RANGE})"
+            ) from exc
         except (TypeError, ValueError, OverflowError) as exc:
             raise ValueError(
                 f"invalid datetime literal {value!r} for column {column!r}"
             ) from exc
 
     if column_type is ColumnType.FLOAT:
-        try:
-            return float(literal)
-        except ValueError as exc:
+        # float() would accept "nan", "inf" and "1_0"; only finite decimals are allowed.
+        stripped = literal.strip()
+        number = float(stripped) if _FLOAT_PATTERN.fullmatch(stripped) else math.nan
+        if not math.isfinite(number):
             raise ValueError(
-                f"invalid floating-point literal {value!r} for column {column!r}"
-            ) from exc
+                f"invalid floating-point literal {value!r} for column {column!r}; "
+                "only finite decimal numbers are supported"
+            )
+        return number
 
     if column_type is ColumnType.INTEGER:
-        try:
-            return int(literal)
-        except ValueError as exc:
-            raise ValueError(
-                f"invalid integer literal {value!r} for column {column!r}"
-            ) from exc
+        stripped = literal.strip()
+        if not _INTEGER_PATTERN.fullmatch(stripped):
+            raise ValueError(f"invalid integer literal {value!r} for column {column!r}")
+        return int(stripped)
 
     raise AssertionError(f"unhandled column type: {column_type!r}")
 
 
 __all__ = [
     "ALIAS_MAP",
+    "MAX_TIMESTAMP",
+    "MIN_TIMESTAMP",
+    "SUPPORTED_TIMESTAMP_RANGE",
     "COLUMN_LABEL_MAP",
     "ColumnType",
     "SCHEMA",

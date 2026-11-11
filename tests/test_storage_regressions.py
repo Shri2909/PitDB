@@ -114,20 +114,21 @@ def test_flush_publish_failure_retains_accepted_rows(monkeypatch):
         store.flush_all()
     monkeypatch.setattr(store, "_add_chunk", publish)
     store.flush_all()
-    # Source flush_all docstring says failed builders accurately preserve state.
     assert store.total_rows == 1, "accepted row was erased before publication"
 
 
-def test_timezone_rejected_flush_retains_buffered_rows():
+def test_timezone_mismatch_rejected_at_ingest_and_store_stays_usable():
     store = ChunkStore()
     store.ingest_row(T.replace(tzinfo=None), "A", values())
     store.flush_all()
-    store.ingest_row(T, "B", values(20))
     with pytest.raises(ValueError, match="timezone awareness"):
-        store.flush_all()
-    assert store._builders["B"]._row_count == 1, (
-        "rejected flush erased accepted buffered row"
-    )
+        store.ingest_row(T, "B", values(20))
+    assert "B" not in store._builders, "rejected row was buffered"
+    # Later symbols are unaffected and flush_all() does not raise forever.
+    store.ingest_row(T.replace(tzinfo=None), "C", values(30))
+    store.flush_all()
+    assert store.total_rows == 2
+    assert not store._builders
 
 
 def test_compaction_publish_failure_preserves_historical_rows(monkeypatch):

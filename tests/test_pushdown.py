@@ -200,8 +200,7 @@ def test_conservative_label_evaluation() -> None:
 
     result = evaluate_pushdown(predicate, labels)
 
-    # A range can prove absence but not presence. The chunk might contain 150,
-    # so exact row filtering must make the final decision after decompression.
+    # A range can prove absence, not presence: exact row filtering decides later.
     assert result.candidate_chunk_ids == [42]
     assert result.skipped_chunk_ids == []
     assert result.candidate_count == 1
@@ -209,14 +208,7 @@ def test_conservative_label_evaluation() -> None:
 
 
 def test_label_pushdown_handles_aware_literal_against_naive_label() -> None:
-    # Regression test: Comparison/In.evaluate_against_label used to call
-    # _coerce_row_operands(label.time_start, self.value) and keep only the
-    # second return value, assuming the literal is always the side that gets
-    # tz-adjusted. That's backwards when the label side is naive (as here)
-    # and the literal is aware -- the helper adjusted the discarded first
-    # value instead, leaving an aware literal to be compared directly against
-    # the label's real naive time_start/time_end, raising
-    # "TypeError: can't compare offset-naive and offset-aware datetimes".
+    # Must not raise "can't compare offset-naive and offset-aware datetimes".
     label = _label(0)  # naive time_start=2024-03-01 00:00, time_end=00:59:59.999999
 
     matching = Comparison(

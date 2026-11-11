@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from src.query.executor import QueryExecutor, QueryResult
+from src.query.sql_parser import (
+    UnsupportedQueryError,
+    extract_as_of,
+    parse_where_clause,
+)
 from src.replay.data_loader import load_dataset
 from src.replay.replay_harness import ReplayHarness
 from src.store.chunk_boundary import (
@@ -39,12 +45,14 @@ def _raw_value_bytes(store: ChunkStore, row_count: int) -> int:
     return row_count * len(store.value_columns) * 8
 
 
-def _compression_ratio(raw_bytes: int, compressed_bytes: int) -> float:
+def _raw_to_stored_ratio(raw_bytes: int, stored_bytes: int) -> float:
+    """Raw float64 payload bytes over stored bytes (~1.0x: a size sanity check)."""
+
     if raw_bytes == 0:
         return 0.0
-    if compressed_bytes <= 0:
-        raise RuntimeError("a non-empty input produced no compressed payload bytes")
-    return raw_bytes / compressed_bytes
+    if stored_bytes <= 0:
+        raise RuntimeError("a non-empty input produced no stored column bytes")
+    return raw_bytes / stored_bytes
 
 
 def _print_store_summary(summary: dict[str, int | float | str]) -> None:
@@ -55,7 +63,7 @@ def _print_store_summary(summary: dict[str, int | float | str]) -> None:
     print(f"Total rows:              {summary['total_rows']:,}")
     print(f"Raw float64 bytes:       {summary['raw_value_bytes']:,}")
     print(f"Total column bytes:      {summary['total_column_bytes']:,}")
-    print(f"Compression ratio:       {summary['compression_ratio']:.3f}x")
+    print(f"Raw/stored byte ratio:   {summary['raw_to_stored_ratio']:.3f}x")
 
 
 def _print_query_result(index: int, sql: str, result: QueryResult) -> None:
@@ -78,10 +86,8 @@ def run_pipeline(
 ) -> dict[str, Any]:
     """Load, sequentially ingest, optionally query, and return all results.
 
-    ``MonthlyBoundary`` is intentionally the default because the primary input
-    is daily OHLCV data. Dense one-minute data must opt into an hourly
-    ``DurationBoundary`` so chunks contain many adjacent values without mixing
-    the daily and intraday granularity models.
+    Defaults to ``MonthlyBoundary`` (daily data); dense one-minute data should
+    pass an hourly ``DurationBoundary``.
     """
 
     if not isinstance(data_csv_path, Path):
@@ -94,9 +100,7 @@ def run_pipeline(
     source_path = data_csv_path.expanduser().resolve(strict=False)
     dataframe = load_dataset(source_path)
 
-    # ReplayHarness is the only ingestion-facing view of the DataFrame. The
-    # store consumes rows strictly in source order and receives no length,
-    # indexing, or lookahead interface.
+    # The harness exposes rows in source order only: no length, indexing or lookahead.
     harness = ReplayHarness(dataframe)
     store = ChunkStore(chunk_boundary=selected_boundary)
     store.ingest_from_replay(harness)
@@ -110,10 +114,7 @@ def run_pipeline(
         "total_rows": store.total_rows,
         "raw_value_bytes": raw_bytes,
         "total_column_bytes": column_bytes,
-        # Raw float64 payload divided by stored column bytes -- now that
-        # storage is uncompressed raw float64, this is expected to sit at
-        # ~1.0x (byte-granularity, matching how it was always computed).
-        "compression_ratio": _compression_ratio(raw_bytes, column_bytes),
+        "raw_to_stored_ratio": _raw_to_stored_ratio(raw_bytes, column_bytes),
     }
     _print_store_summary(summary)
 
@@ -125,9 +126,7 @@ def run_pipeline(
             _print_query_result(index, sql, result)
             query_results.append({"sql": sql, "result": result})
 
-    # The source DataFrame is intentionally not returned. Programmatic callers
-    # receive the compressed store and query outputs, preserving the replay
-    # layer's rule that consumers never gain access to its backing DataFrame.
+    # The source DataFrame is deliberately not returned.
     return {
         "summary": summary,
         "store": store,
@@ -141,6 +140,34 @@ def _boundary_from_cli(strategy: str) -> ChunkBoundary:
     if strategy == "hourly":
         return DurationBoundary(timedelta(hours=1))
     raise ValueError(f"unsupported chunk strategy: {strategy}")
+
+
+def _non_empty_query(value: str) -> str:
+    if not value.strip():
+        raise argparse.ArgumentTypeError("query must not be empty")
+    return value
+
+
+def _source_checkout_root() -> Path | None:
+    """Return the repository root in a source checkout (``--benchmark`` needs one)."""
+
+    root = Path(__file__).resolve().parents[1]
+    if (root / "benchmarks" / "run_suite.py").is_file() and (root / "data").is_dir():
+        return root
+    return None
+
+
+def _preflight_queries(queries: list[str] | None) -> None:
+    """Reject syntactically invalid queries before the slow ingestion."""
+
+    for sql in queries or []:
+        remaining_sql, _ = extract_as_of(sql)
+        parse_where_clause(remaining_sql)
+
+
+def _fail(message: str) -> int:
+    print(f"error: {message}", file=sys.stderr)
+    return 1
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -160,32 +187,53 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--query",
         action="append",
+        type=_non_empty_query,
         default=None,
         help="SQL query to execute after ingestion; repeat for multiple queries",
     )
     parser.add_argument(
         "--benchmark",
         action="store_true",
-        help="run the full benchmark suite and generate available charts",
+        help=(
+            "run the full benchmark suite and generate available charts "
+            "(requires a source checkout, not an installed wheel)"
+        ),
     )
     args = parser.parse_args(argv)
 
-    run_pipeline(
-        data_csv_path=args.data_csv,
-        chunk_boundary=_boundary_from_cli(args.chunk_strategy),
-        queries=args.query,
-    )
+    if args.benchmark and _source_checkout_root() is None:
+        return _fail(
+            "--benchmark requires a source checkout of PitDB (the benchmarks "
+            "package and data/ directory are not part of the installed "
+            "package); clone the repository and run it from there"
+        )
+
+    try:
+        _preflight_queries(args.query)
+        run_pipeline(
+            data_csv_path=args.data_csv,
+            chunk_boundary=_boundary_from_cli(args.chunk_strategy),
+            queries=args.query,
+        )
+    except UnicodeDecodeError as exc:
+        return _fail(f"{args.data_csv} is not valid UTF-8 text ({exc.reason})")
+    except UnsupportedQueryError as exc:
+        return _fail(f"unsupported or invalid --query: {exc}")
+    except (OSError, ValueError) as exc:
+        return _fail(str(exc))
 
     if args.benchmark:
-        # Import lazily so normal pipeline use does not require optional
-        # benchmark/chart dependencies or pay their import cost.
-        from benchmarks.run_all import run_all as run_benchmarks
-        from charts.generate_all import generate_all as generate_charts
+        # Lazy import: benchmark/chart dependencies are optional.
+        try:
+            from benchmarks.run_suite import run_suite
+        except ImportError as exc:
+            return _fail(
+                f"benchmark dependencies are unavailable ({exc}); "
+                "install them with: pip install '.[benchmarks]'"
+            )
 
         print("\nRunning benchmark suite...")
-        run_benchmarks(include_memory=True)
-        print("\nGenerating charts...")
-        generate_charts()
+        return run_suite()
 
     return 0
 

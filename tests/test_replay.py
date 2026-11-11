@@ -39,8 +39,7 @@ def test_sequential_access_only(replay_frame: pd.DataFrame) -> None:
         harness.next_row()
         assert harness._index == expected_index + 1
 
-    # Internal state uses underscore-prefixed names only. Consumers receive no
-    # public DataFrame, length, row-count, random-access, or lookahead surface.
+    # Only underscore-prefixed state: no public DataFrame, length or lookahead.
     assert not {name for name in vars(harness) if not name.startswith("_")}
     for forbidden in (
         "df",
@@ -157,14 +156,35 @@ def test_replay_preserves_exact_nonblank_symbols(replay_frame: pd.DataFrame) -> 
     assert next(ReplayHarness(replay_frame))["symbol"] == " 'AAPL' "
 
 
-def test_replay_accepts_custom_value_columns_without_close(
+def test_replay_accepts_custom_value_columns_including_close(
     replay_frame: pd.DataFrame,
 ) -> None:
     replay_frame["metric"] = np.arange(len(replay_frame), dtype=np.float64)
 
-    row = next(ReplayHarness(replay_frame, value_columns=["metric"]))
+    row = next(ReplayHarness(replay_frame, value_columns=["close", "metric"]))
 
-    np.testing.assert_array_equal(row["values"], np.array([0.0]))
+    np.testing.assert_array_equal(
+        row["values"], np.array([replay_frame["close"].iat[0], 0.0])
+    )
+
+
+def test_replay_rejects_custom_value_columns_without_close(
+    replay_frame: pd.DataFrame,
+) -> None:
+    replay_frame["metric"] = np.arange(len(replay_frame), dtype=np.float64)
+
+    with pytest.raises(ValueError, match="must include 'close'"):
+        ReplayHarness(replay_frame, value_columns=["metric"])
+
+
+def test_replay_rejects_empty_value_columns(replay_frame: pd.DataFrame) -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        ReplayHarness(replay_frame, value_columns=[])
+
+
+def test_replay_rejects_bare_string_value_columns(replay_frame: pd.DataFrame) -> None:
+    with pytest.raises(TypeError, match="bare string.*\\['close'\\]"):
+        ReplayHarness(replay_frame, value_columns="close")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(

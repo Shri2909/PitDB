@@ -35,12 +35,26 @@ def test_parse_greater_than() -> None:
 
 
 def test_parse_less_than_equal() -> None:
-    predicate = parse_where_clause("SELECT * FROM data WHERE date <= '2024-03-01'")
+    # An exact (time-bearing) literal keeps the plain operator.
+    predicate = parse_where_clause(
+        "SELECT * FROM data WHERE date <= '2024-03-01 00:00:00'"
+    )
 
     assert isinstance(predicate, Comparison)
     assert predicate.column == "timestamp"
     assert predicate.operator == "<="
     assert predicate.value == datetime(2024, 3, 1)
+    assert predicate.label_field == "time"
+
+
+def test_parse_less_than_equal_date_only_is_day_aware() -> None:
+    # A date-only literal names the whole day, so `<= day` is `< next day`.
+    predicate = parse_where_clause("SELECT * FROM data WHERE date <= '2024-03-01'")
+
+    assert isinstance(predicate, Comparison)
+    assert predicate.column == "timestamp"
+    assert predicate.operator == "<"
+    assert predicate.value == datetime(2024, 3, 2)
     assert predicate.label_field == "time"
 
 
@@ -221,8 +235,7 @@ def test_extract_as_of_absent_returns_sql_unchanged() -> None:
 
     assert as_of is None
     assert remaining_sql == sql
-    # Backward compatibility: every existing query must parse identically
-    # whether or not it's first passed through extract_as_of.
+    # Parsing must be identical whether or not extract_as_of ran first.
     assert parse_where_clause(remaining_sql) == parse_where_clause(sql)
 
 
@@ -232,12 +245,7 @@ def test_extract_as_of_rejects_version_number_syntax() -> None:
 
 
 def test_extract_as_of_preserves_quoted_identifier_in_where_clause() -> None:
-    """Regression: the old sqlglot-databricks-dialect extraction re-serialized
-    the entire statement, and Databricks treats a double-quoted string as a
-    literal rather than a quoted identifier -- silently turning a quoted
-    column reference into two competing string literals whenever AS OF was
-    present, even though the same WHERE clause parses fine on its own.
-    """
+    """A double-quoted column in WHERE must stay an identifier when AS OF is present."""
 
     remaining_sql, as_of = extract_as_of(
         "SELECT * FROM data TIMESTAMP AS OF '2024-01-01T00:00:00Z' "
@@ -252,10 +260,7 @@ def test_extract_as_of_preserves_quoted_identifier_in_where_clause() -> None:
 
 
 def test_extract_as_of_preserves_escaped_quote_literal() -> None:
-    """Regression: Databricks treats adjacent quoted strings as implicit
-    concatenation, so a legitimately escaped literal like 'O''Reilly' used
-    to be corrupted into CONCAT('O', 'Reilly') whenever AS OF was present.
-    """
+    """An escaped quote like 'O''Reilly' must survive extraction intact."""
 
     remaining_sql, as_of = extract_as_of(
         "SELECT * FROM data TIMESTAMP AS OF '2024-01-01T00:00:00Z' "
@@ -269,13 +274,7 @@ def test_extract_as_of_preserves_escaped_quote_literal() -> None:
 
 
 def test_extract_as_of_not_defeated_by_where_inside_a_leading_comment() -> None:
-    """Regression: a prior regex-based extraction searched for TIMESTAMP AS OF
-    only in the text before the first bare "WHERE" match -- defeated by any
-    earlier occurrence of the ordinary English word "where", such as inside a
-    SQL comment, which silently truncated the search before it ever reached
-    the real clause (leaving as_of=None and the leftover AS OF text corrupting
-    the downstream parse).
-    """
+    """The word "where" in a leading comment must not hide the AS OF clause."""
 
     sql = (
         "-- pull rows where the AS OF snapshot matters\n"
@@ -292,28 +291,20 @@ def test_extract_as_of_not_defeated_by_where_inside_a_leading_comment() -> None:
 
 
 def test_extract_as_of_ignores_the_phrase_inside_an_alias() -> None:
-    """Regression: the same fragile boundary search also falsely rejected
-    valid queries that merely contained the phrase "TIMESTAMP AS OF" inside a
-    column alias with no real AS OF clause present at all.
-    """
+    """ "TIMESTAMP AS OF" inside a column alias is not an AS OF clause."""
 
     sql = "SELECT close AS \"TIMESTAMP AS OF trick\" FROM data WHERE symbol = 'AAPL'"
     remaining_sql, as_of = extract_as_of(sql)
 
     assert as_of is None
     assert remaining_sql == sql
-    # Extraction preserves text independently of the supported projection
-    # grammar. Execution must reject this unimplemented projection explicitly.
+    # Extraction ignores the projection; parsing must still reject it.
     with pytest.raises(UnsupportedQueryError, match="SELECT \\*"):
         parse_where_clause(remaining_sql)
 
 
 def test_extract_as_of_ordinary_timestamp_column_reference_is_unaffected() -> None:
-    """The tokenizer sees "timestamp" as TokenType.TIMESTAMP even as a plain
-    column reference (this project's own queries write this constantly) --
-    extraction must only match that token immediately after the table name,
-    never elsewhere, or every ordinary date-range query would misfire.
-    """
+    """A plain ``timestamp`` column reference is never mistaken for AS OF."""
 
     sql = "SELECT * FROM data WHERE timestamp >= '2024-01-01'"
     remaining_sql, as_of = extract_as_of(sql)
@@ -323,21 +314,14 @@ def test_extract_as_of_ordinary_timestamp_column_reference_is_unaffected() -> No
 
 
 def test_extract_as_of_rejects_non_literal_marker_without_leaking_raw_error() -> None:
-    """A TIMESTAMP token immediately after the table name that isn't followed
-    by a complete AS OF '<literal>' sequence is a malformed attempt at this
-    syntax, in that specific structural position -- must raise the project's
-    own UnsupportedQueryError, never a raw exception from a downstream parser.
-    """
+    """A malformed AS OF raises UnsupportedQueryError, not a raw parser error."""
 
     with pytest.raises(UnsupportedQueryError, match="AS OF requires a literal"):
         extract_as_of("SELECT * FROM data TIMESTAMP AS OF symbol WHERE symbol = 'AAPL'")
 
 
 def test_in_rejects_date_only_literal() -> None:
-    """Regression: `=` expands a date-only literal into a whole-day range,
-    but IN never did -- silently matching only exact midnight and dropping
-    every intraday row for that date. Reject explicitly instead.
-    """
+    """IN has no whole-day expansion, so date-only literals are rejected."""
 
     with pytest.raises(
         UnsupportedQueryError, match="IN with date-only literals is not supported"

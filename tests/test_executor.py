@@ -32,9 +32,8 @@ QUERIES = {
 
 @pytest.fixture(scope="module")
 def query_store() -> ChunkStore:
-    # Four calendar months and two symbols yield eight independently prunable
-    # chunks. March 1 deliberately has non-midnight observations to exercise
-    # date-only equality rather than exact-instant equality.
+    # Four months x two symbols = eight prunable chunks; March 1 has intraday rows
+    # to exercise date-only equality.
     timestamps = pd.to_datetime(
         [
             "2024-01-02 09:30:00Z",
@@ -87,9 +86,7 @@ def test_result_equivalence_Q1_through_Q5(
     for name, sql in QUERIES.items():
         predicate = parse_where_clause(sql)
 
-        # QueryExecutor normally parses internally. Injecting this exact object
-        # ensures indexed and brute-force paths share one predicate tree, so the
-        # only variable under test is whether chunk skipping loses valid rows.
+        # Inject one shared predicate tree so only chunk skipping differs.
         monkeypatch.setattr(
             executor_module,
             "parse_where_clause",
@@ -126,17 +123,8 @@ def test_full_scan_matches_pushdown_query(query_store: ChunkStore) -> None:
 def test_full_scan_matches_pushdown_for_datetime_in_clause(
     query_store: ChunkStore,
 ) -> None:
-    # Regression test: In.evaluate_against_row used to skip the tz coercion
-    # In.evaluate_vectorized applies, so a tz-aware stored timestamp compared
-    # against the naive datetimes an IN-clause literal parses to (no SQL
-    # literal here carries an explicit UTC offset) silently returned False
-    # under Python's `in` semantics -- the naive full-scan baseline would
-    # undercount matches for any timestamp/price IN query. symbol IN doesn't
-    # exercise this (strings need no tz coercion), so QUERIES above never
-    # caught it.
-    # Exact stored-row instants (not date-only literals -- IN does exact
-    # equality, it doesn't get the whole-day expansion `=` gets), each held
-    # by two rows (AAPL and MSFT) in the query_store fixture.
+    # tz-aware stored timestamps vs naive IN literals; exact instants, each held
+    # by two rows (AAPL and MSFT).
     sql = (
         "SELECT * FROM data WHERE timestamp IN "
         "('2024-03-01 09:30:00', '2024-04-01 09:30:00')"
@@ -155,8 +143,7 @@ def test_full_scan_matches_pushdown_for_datetime_in_clause(
 
 
 def test_query_returns_correct_row_count(query_store: ChunkStore) -> None:
-    # The synthetic dataset has exactly three AAPL observations in March:
-    # March 1 at 09:30 and 15:30, plus March 5 at 09:30.
+    # AAPL in March: 03-01 at 09:30 and 15:30, and 03-05 at 09:30.
     result = QueryExecutor(query_store).execute(QUERIES["Q2"])
 
     assert result.row_count == 3

@@ -1,12 +1,9 @@
-"""Immutable chunk metadata for conservative predicate pushdown.
-
-The min/max fields form a compact zone map: returning ``False`` means a chunk
-is provably unable to match and may be skipped, while ``True`` means it remains
-a candidate for exact row-level evaluation.
-"""
+"""Immutable chunk metadata (zone maps) for conservative predicate pushdown."""
 
 from __future__ import annotations
 
+import math
+import numbers
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -34,15 +31,7 @@ class ChunkLabel:
     max_price: float
     row_count: int
     chunk_id: int
-    # None means "no revision": this chunk's rows were recorded at their own
-    # valid timestamp (a live feed's ordinary print), so transaction-time
-    # visibility can be derived from time_start/time_end directly. A
-    # concrete (start, end) pair marks a correction chunk -- a zone map over
-    # each row's own transaction time, exactly like time_start/time_end is a
-    # zone map over valid time. A single, unmerged correction has
-    # start == end (a degenerate point range); a chunk merging several
-    # corrections (see ChunkStore.compact_corrections) gets the true
-    # min/max across the rows it actually contains.
+    # Both None for a base chunk; for a correction chunk, the min/max transaction time.
     transaction_time_start: datetime | None = None
     transaction_time_end: datetime | None = None
 
@@ -62,6 +51,7 @@ class ChunkLabel:
                 raise ValueError("time_end must not precede time_start")
         except TypeError as exc:
             raise ValueError("time range timezone awareness must match") from exc
+        self._validate_price_range()
         if (self.transaction_time_start is None) != (self.transaction_time_end is None):
             raise ValueError("both transaction-time bounds must be set together")
         if self.transaction_time_start is not None:
@@ -77,12 +67,28 @@ class ChunkLabel:
                     "transaction-time timezone awareness must match"
                 ) from exc
 
+    def _validate_price_range(self) -> None:
+        """Require ordered price bounds, except the all-NaN marker (+inf, -inf)."""
+        for field in ("min_price", "max_price"):
+            value = getattr(self, field)
+            if isinstance(value, bool) or not isinstance(value, numbers.Real):
+                raise TypeError(f"{field} must be a real number")
+            if math.isnan(value):
+                raise ValueError(f"{field} must not be NaN")
+        if self.min_price > self.max_price and not (
+            self.min_price == math.inf and self.max_price == -math.inf
+        ):
+            raise ValueError(
+                "min_price must not exceed max_price "
+                "(only the all-NaN marker (+inf, -inf) may be inverted)"
+            )
+
     def can_contain_symbol(self, symbol: str) -> bool:
+        """Return whether this chunk holds the given symbol."""
         return self.symbol == symbol
 
     def can_contain_time(self, op: str, value: datetime) -> bool:
         """Return whether this inclusive time range might satisfy a predicate."""
-
         _require_operator(op)
         if op == "=":
             return self.time_start <= value <= self.time_end
@@ -95,13 +101,7 @@ class ChunkLabel:
         return self.time_start < value  # op == "<"
 
     def can_contain_price(self, op: str, value: float) -> bool:
-        """Return whether this min/max price range might satisfy a predicate.
-
-        An all-NaN chunk is represented naturally as ``(+inf, -inf)``. These
-        formulas then return False for every finite or NaN query value without
-        requiring a special branch.
-        """
-
+        """Return whether this min/max price range might satisfy a predicate."""
         _require_operator(op)
         if op == "=":
             return self.min_price <= value <= self.max_price

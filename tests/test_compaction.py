@@ -1,12 +1,4 @@
-"""Correction-chunk compaction: fewer, larger chunks, identical query results.
-
-Compaction is a pure storage-layout optimization -- it must never change
-what any query (with any AS OF cutoff) sees, only how many chunks that
-answer happens to live in. The property-based test below is the actual
-"proof": the equivalence is checked across a generated space of random
-correction sets and random AS OF cutoffs, not just a couple of hand-picked
-examples.
-"""
+"""Correction-chunk compaction: fewer, larger chunks, identical query results."""
 
 from __future__ import annotations
 
@@ -121,9 +113,7 @@ def test_compact_corrections_preserves_as_of_query_results() -> None:
 def test_compaction_preserves_query_results_property(
     day_offsets: list[int], lag_seed: int, as_of_offset_days: int
 ) -> None:
-    """Property: for ANY correction set and ANY AS OF cutoff, compaction is
-    invisible to query results -- the core claim this whole plan rests on."""
-
+    """For any correction set and AS OF cutoff, compaction does not change results."""
     day_offsets = sorted(day_offsets)
     transaction_lag_days = [lag_seed + index for index in range(len(day_offsets))]
     store, _ = _build_store_with_corrections(day_offsets, transaction_lag_days)
@@ -206,16 +196,10 @@ def test_compact_corrections_does_not_disturb_base_chunks() -> None:
 
 
 def test_compact_corrections_accepts_a_coarser_boundary_override() -> None:
-    """Corrections spread thinly across many MonthlyBoundary windows have
-    little to merge with under the default (store) boundary, but merge
-    aggressively under a deliberately coarser override -- mirroring Hudi's
-    and Delta's own configurable compaction batch/target-file-size knobs."""
-
+    """Sparse corrections merge under a coarser boundary but not the default one."""
     store = ChunkStore(chunk_boundary=MonthlyBoundary())
     base_day = datetime(2024, 1, 1, tzinfo=UTC)
-    # One correction every ~2 months, spanning 2 years -> ~12 corrections,
-    # each landing in a different monthly window, so the default boundary
-    # has nothing to merge.
+    # ~12 corrections, one per monthly window: the default boundary can't merge.
     offsets = list(range(0, 730, 60))
     timestamps = [base_day + timedelta(days=offset) for offset in offsets]
 
@@ -234,8 +218,7 @@ def test_compact_corrections_accepts_a_coarser_boundary_override() -> None:
     removed_default = store.compact_corrections()
     assert removed_default == 0  # nothing shares a month, nothing merges
 
-    # Re-build identical data in a fresh store, this time compacting with an
-    # explicit multi-year boundary override.
+    # Same data in a fresh store, compacted with a multi-year boundary.
     store2 = ChunkStore(chunk_boundary=MonthlyBoundary())
     for timestamp in timestamps:
         store2.ingest_row(timestamp, "AAPL", _values(100.0))

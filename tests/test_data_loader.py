@@ -1,17 +1,20 @@
-"""Tests for CSV loading and schema validation (src/replay/data_loader.py).
-
-This module previously had zero test coverage anywhere in the suite.
-"""
+"""Tests for CSV loading and schema validation (src/replay/data_loader.py)."""
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from src.replay.data_loader import load_dataset, load_single_symbol, validate_schema
+from src.replay.data_loader import (
+    DATASET_COLUMNS,
+    load_dataset,
+    load_single_symbol,
+    validate_schema,
+)
 
 
 def _single_symbol_frame() -> pd.DataFrame:
@@ -62,14 +65,46 @@ def test_validate_schema_rejects_non_datetime_timestamp() -> None:
         validate_schema(frame)
 
 
-def test_validate_schema_coerces_numeric_columns_with_warning() -> None:
+def test_validate_schema_lossless_integer_cast_is_silent() -> None:
     frame = _merged_frame()
     frame["volume"] = frame["volume"].astype(np.int64)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        validate_schema(frame)
+
+    assert frame["volume"].dtype == np.float64
+
+
+def test_validate_schema_lossy_integer_cast_warns() -> None:
+    frame = _merged_frame()
+    frame["volume"] = np.array([2**53 + 1, 1, 2, 3], dtype=np.int64)
 
     with pytest.warns(RuntimeWarning, match="casting numeric column 'volume'"):
         validate_schema(frame)
 
     assert frame["volume"].dtype == np.float64
+
+
+def test_validate_schema_object_dtype_cast_warns() -> None:
+    frame = _merged_frame()
+    frame["volume"] = pd.Series(["1", "2", "3", "4"], dtype=object)
+
+    with pytest.warns(RuntimeWarning, match="casting numeric column 'volume'"):
+        validate_schema(frame)
+
+
+def test_normal_csv_load_emits_no_warnings(tmp_path: Path) -> None:
+    frame = _merged_frame()
+    frame["volume"] = frame["volume"].astype(np.int64)
+    path = tmp_path / "ints.csv"
+    frame.to_csv(path, index=False)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        loaded = load_dataset(path)
+
+    assert loaded["volume"].dtype == np.float64
 
 
 def test_validate_schema_rejects_non_convertible_numeric_column() -> None:
@@ -117,6 +152,33 @@ def test_load_dataset_preserves_exact_nonblank_symbol(tmp_path: Path) -> None:
     loaded = load_dataset(path)
 
     assert list(loaded["symbol"]) == list(frame["symbol"])
+
+
+@pytest.mark.parametrize("symbol", ["NA", "123", "null", "nan", "00123"])
+@pytest.mark.parametrize("column_name", ["symbol", " SYMBOL "])
+def test_load_dataset_preserves_symbol_tokens_without_csv_inference(
+    tmp_path: Path, symbol: str, column_name: str
+) -> None:
+    frame = _merged_frame().iloc[:2].copy()
+    frame["symbol"] = symbol
+    frame = frame.rename(columns={"symbol": column_name})
+    path = tmp_path / "literal-symbol.csv"
+    frame.to_csv(path, index=False)
+
+    loaded = load_dataset(path)
+
+    assert loaded["symbol"].tolist() == [symbol] * len(frame)
+
+
+def test_symbol_converter_keeps_default_numeric_null_handling(tmp_path: Path) -> None:
+    frame = _merged_frame()
+    frame["symbol"] = "NA"
+    frame["volume"] = "NA"
+    path = tmp_path / "null-numeric.csv"
+    frame.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="completely null columns.*volume"):
+        load_dataset(path)
 
 
 def test_validate_schema_accepts_pandas_string_symbols() -> None:
@@ -197,11 +259,178 @@ def test_load_dataset_rejects_duplicate_timestamp_symbol_pairs(tmp_path: Path) -
 
 def test_load_dataset_rejects_unsorted_timestamps_within_symbol(tmp_path: Path) -> None:
     frame = _merged_frame()
-    # Swap AAPL's two rows so AAPL's own timestamps go backward, while the
-    # file's overall row order (grouped by symbol) stays otherwise valid.
+    # Swap AAPL's rows so its timestamps go backward.
     frame.loc[[0, 1], "timestamp"] = frame.loc[[1, 0], "timestamp"].to_numpy()
     path = tmp_path / "merged.csv"
     frame.to_csv(path, index=False)
 
     with pytest.raises(ValueError, match="unsorted symbols"):
         load_dataset(path)
+
+
+# --- non-finite values and booleans -------------------------------------------
+
+
+@pytest.mark.parametrize("bad", [np.inf, -np.inf])
+@pytest.mark.parametrize("column", ["open", "high", "low", "close", "volume"])
+def test_validate_schema_rejects_infinite_values(column: str, bad: float) -> None:
+    frame = _merged_frame()
+    frame.loc[2, column] = bad
+
+    with pytest.raises(ValueError, match=rf"'{column}'.*non-finite.*row 2"):
+        validate_schema(frame)
+
+
+@pytest.mark.parametrize("column", ["open", "high", "low", "close"])
+def test_validate_schema_rejects_nan_prices_naming_first_row(column: str) -> None:
+    frame = _merged_frame()
+    frame.loc[[1, 3], column] = np.nan
+
+    with pytest.raises(ValueError, match=rf"price column '{column}'.*row 1"):
+        validate_schema(frame)
+
+
+def test_validate_schema_allows_missing_volume() -> None:
+    frame = _merged_frame()
+    frame.loc[1, "volume"] = np.nan
+
+    validate_schema(frame)
+
+    assert np.isnan(frame.loc[1, "volume"])
+
+
+@pytest.mark.parametrize("dtype", ["bool", "object"])
+def test_validate_schema_rejects_boolean_columns(dtype: str) -> None:
+    frame = _merged_frame()
+    frame["volume"] = pd.Series([True, False, True, True], dtype=dtype)
+
+    with pytest.raises(ValueError, match="'volume'.*boolean"):
+        validate_schema(frame)
+
+
+def test_load_dataset_rejects_inf_and_boolean_csv_values(tmp_path: Path) -> None:
+    frame = _merged_frame()
+    frame.loc[1, "close"] = np.inf
+    path = tmp_path / "inf.csv"
+    frame.to_csv(path, index=False)
+    with pytest.raises(ValueError, match="'close'.*non-finite.*row 1"):
+        load_dataset(path)
+
+    frame = _merged_frame()
+    frame["open"] = [True, False, True, False]
+    path = tmp_path / "bool.csv"
+    frame.to_csv(path, index=False)
+    with pytest.raises(ValueError, match="'open'.*boolean"):
+        load_dataset(path)
+
+
+def test_load_single_symbol_rejects_inf(tmp_path: Path) -> None:
+    frame = _single_symbol_frame()
+    frame.loc[2, "high"] = np.inf
+    path = tmp_path / "inf.csv"
+    frame.to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="'high'.*non-finite.*row 2"):
+        load_single_symbol(path)
+
+
+# --- CSV shape edge cases ------------------------------------------------------
+
+
+def test_header_only_csv_reports_no_data_rows(tmp_path: Path) -> None:
+    path = tmp_path / "header-only.csv"
+    path.write_text("timestamp,symbol,open,high,low,close,volume\n")
+
+    with pytest.raises(ValueError, match="no data rows"):
+        load_dataset(path)
+    with pytest.raises(ValueError, match="no data rows"):
+        load_single_symbol(path)
+
+
+def test_trailing_comma_in_header_drops_unnamed_null_column(tmp_path: Path) -> None:
+    path = tmp_path / "trailing-comma.csv"
+    path.write_text(
+        "timestamp,symbol,open,high,low,close,volume,\n"
+        "2024-01-02,AAPL,1,2,0.5,1.5,100,\n"
+        "2024-01-03,AAPL,1,2,0.5,1.5,100,\n"
+    )
+
+    loaded = load_dataset(path)
+
+    assert list(loaded.columns) == list(DATASET_COLUMNS)
+    assert len(loaded) == 2
+
+
+def test_trailing_comma_in_header_only_without_row_commas(tmp_path: Path) -> None:
+    path = tmp_path / "trailing-header-comma.csv"
+    path.write_text(
+        "timestamp,symbol,open,high,low,close,volume,\n"
+        "2024-01-02,AAPL,1,2,0.5,1.5,100\n"
+    )
+
+    assert list(load_dataset(path).columns) == list(DATASET_COLUMNS)
+
+
+def test_unnamed_column_with_data_is_not_silently_dropped(tmp_path: Path) -> None:
+    path = tmp_path / "unnamed-data.csv"
+    path.write_text(
+        "timestamp,symbol,open,high,low,close,volume,\n"
+        "2024-01-02,AAPL,1,2,0.5,1.5,100,7\n"
+    )
+
+    assert "unnamed: 7" in load_dataset(path).columns
+
+
+def test_utf8_bom_file_loads(tmp_path: Path) -> None:
+    path = tmp_path / "bom.csv"
+    path.write_bytes(
+        b"\xef\xbb\xbfsymbol,timestamp,open,high,low,close,volume\n"
+        b"AAPL,2024-01-02,1,2,0.5,1.5,100\n"
+    )
+    assert load_dataset(path)["symbol"].tolist() == ["AAPL"]
+
+    quoted = tmp_path / "bom-quoted.csv"
+    quoted.write_bytes(
+        b'\xef\xbb\xbf"timestamp","symbol","open","high","low","close","volume"\n'
+        b'2024-01-02,"AAPL",1,2,0.5,1.5,100\n'
+    )
+    assert load_dataset(quoted)["symbol"].tolist() == ["AAPL"]
+
+
+# --- load_dataset reporting ----------------------------------------------------
+
+
+def test_load_dataset_truncates_long_symbol_list(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    count = 500
+    frame = pd.DataFrame(
+        {
+            "timestamp": ["2024-01-02"] * count,
+            "symbol": [f"SYM{i:04d}" for i in range(count)],
+            **{name: [1.0] * count for name in ("open", "high", "low", "close")},
+            "volume": [1.0] * count,
+        }
+    )
+    path = tmp_path / "many.csv"
+    frame.to_csv(path, index=False)
+
+    load_dataset(path)
+
+    out = capsys.readouterr().out
+    assert "symbols (500)" in out
+    assert "SYM0000" in out
+    assert "SYM0499" not in out
+    assert "(+490 more)" in out
+    assert len(out) < 400
+
+
+def test_load_dataset_verbose_false_is_quiet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "ok.csv"
+    _merged_frame().to_csv(path, index=False)
+
+    load_dataset(path, verbose=False)
+
+    assert capsys.readouterr().out == ""

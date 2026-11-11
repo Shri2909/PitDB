@@ -1,11 +1,4 @@
-"""Bitemporal versioning: transaction-time corrections and AS OF queries.
-
-These tests exercise the same class of correctness concern this project's
-recent audit already found twice (In.evaluate_against_row's missing tz
-coercion, evaluate_against_label's backwards alignment): a new predicate
-axis (transaction time) must never silently leak a fact into a query that,
-as of its stated cutoff, could not yet have known about it.
-"""
+"""Bitemporal versioning: transaction-time corrections and AS OF queries."""
 
 from __future__ import annotations
 
@@ -210,9 +203,7 @@ def test_pushdown_prunes_correction_chunk_by_transaction_time() -> None:
         AlwaysTrue(), [base_label, correction_label], as_of=day + timedelta(days=1)
     )
 
-    # The base label (transaction_time=None) is always a candidate here since
-    # its own valid time (day) already precedes the AS OF cutoff. The
-    # correction label's later transaction_time makes it provably invisible.
+    # The base label stays a candidate; the correction's later txn time hides it.
     assert result.candidate_chunk_ids == [0]
     assert result.skipped_chunk_ids == [1]
 
@@ -262,24 +253,14 @@ def test_full_scan_matches_pushdown_with_as_of_and_corrections() -> None:
 
 
 def test_correction_failing_value_predicate_still_overrides_base_row() -> None:
-    """Regression: a correction's own value must never be pruned by price.
-
-    Before this fix, a correction chunk whose price zone map failed a value
-    predicate was pruned from candidacy entirely by pushdown, and even once
-    brought in as a candidate, the predicate filter ran before version
-    resolution -- either bug alone let the stale base row leak through a
-    query that the correction itself would have failed.
-    """
+    """A correction's own value must never be pruned by price pushdown."""
 
     store = ChunkStore()
     event_time = datetime(2024, 3, 1, 9, 30, tzinfo=UTC)
     store.ingest_row(event_time, "AAPL", _values(100.0))
     store.flush_all()
 
-    # The correction's own close (40.0) fails `close > 50` -- a naive price
-    # pushdown or a filter-before-resolve ordering would each independently
-    # hide it, leaving the stale base row (100.0, which passes) as the
-    # answer instead of the corrected value overriding it.
+    # The correction's close (40.0) fails `close > 50`; the base row (100.0) passes.
     store.ingest_correction(
         event_time,
         "AAPL",
@@ -294,9 +275,7 @@ def test_correction_failing_value_predicate_still_overrides_base_row() -> None:
     full_scan_result = full_scan.execute(sql)
     pushdown_result = pushdown.execute(sql)
 
-    # The corrected value (40.0) no longer satisfies `close > 50`, so the
-    # (symbol, timestamp) key must be resolved to the correction and then
-    # correctly excluded -- not silently answered by the stale base row.
+    # The key must resolve to the correction and then be excluded, not the base row.
     assert full_scan_result.row_count == 0
     assert pushdown_result.row_count == 0
     pd.testing.assert_frame_equal(
@@ -307,14 +286,7 @@ def test_correction_failing_value_predicate_still_overrides_base_row() -> None:
 
 
 def test_same_instant_correction_wins_tie_over_base_row() -> None:
-    """Regression: an exact-tie transaction time must favor the correction.
-
-    ``ingest_correction`` only rejects a transaction time strictly earlier
-    than the event's own timestamp, so transaction_time == timestamp is
-    legal. resolve_versions' tie-break used to fall back to first-occurrence
-    order, which -- since base rows are always concatenated before
-    correction rows -- silently favored the stale base row on an exact tie.
-    """
+    """An exact-tie transaction time must favor the correction."""
 
     store = ChunkStore()
     event_time = datetime(2024, 3, 1, 9, 30, tzinfo=UTC)
@@ -330,14 +302,7 @@ def test_same_instant_correction_wins_tie_over_base_row() -> None:
 
 
 def test_same_instant_ties_resolve_independently_across_symbols() -> None:
-    """Regression guard for a resolve_versions optimization: its internal
-    tie-break sort was reduced to sort only by (transaction_time, is
-    correction), dropping symbol/timestamp from that specific sort call,
-    since groupby(["symbol","timestamp"]) partitions by key regardless of
-    the frame's physical row order. Verify that holds with several symbols
-    each carrying their own same-instant tie at once -- a tie for one symbol
-    must never leak into another symbol's resolution.
-    """
+    """A same-instant tie for one symbol must never leak into another symbol."""
 
     store = ChunkStore()
     event_time = datetime(2024, 3, 1, 9, 30, tzinfo=UTC)
@@ -360,16 +325,7 @@ def test_same_instant_ties_resolve_independently_across_symbols() -> None:
 
 
 def test_engines_agree_when_correction_exists_for_unrelated_symbol() -> None:
-    """Regression: needs_resolution scope mismatch caused a row-order-only
-    disagreement between the two engines.
-
-    QueryExecutor used to gate resolution on only its own pushdown-surviving
-    candidates, while FullScanQueryEngine (which has no narrower scope)
-    always resolved once any correction existed anywhere in the store. A
-    query for a symbol untouched by any correction would then take a
-    different branch in each engine -- same rows, different order -- and
-    fail the full-scan/pushdown equivalence check.
-    """
+    """A correction for another symbol must not change row order in either engine."""
 
     store = ChunkStore()
     aapl_time = datetime(2024, 3, 1, 9, 30, tzinfo=UTC)

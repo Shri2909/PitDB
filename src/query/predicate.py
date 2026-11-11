@@ -25,12 +25,7 @@ _VECTORIZED_COMPARISONS: dict[str, Any] = {
 
 
 def _coerce_column_literal(column: pd.Series, literal: Any) -> Any:
-    """Vectorized counterpart to :func:`_coerce_row_operands`.
-
-    A chunk's column has one dtype for every row, so the tz/float alignment
-    that per-row code repeats for each value only needs to happen once here,
-    against the literal, before comparing it with the whole column at once.
-    """
+    """Vectorized counterpart to :func:`_coerce_row_operands`: align once per column."""
 
     if isinstance(literal, datetime):
         literal = timestamp_value(literal, name="datetime literal")
@@ -38,10 +33,11 @@ def _coerce_column_literal(column: pd.Series, literal: Any) -> Any:
             return literal
         return align_timestamp(column.iloc[0], literal)
 
-    if isinstance(literal, float):
-        return literal
-
     return literal
+
+
+def _is_nan(value: Any) -> bool:
+    return isinstance(value, float) and value != value
 
 
 def _validate_canonical_binding(column: str, label_field: str | None) -> None:
@@ -74,41 +70,22 @@ def _coerce_row_operands(row_value: Any, literal: Any) -> tuple[Any, Any]:
         try:
             return float(row_value), literal
         except (TypeError, ValueError, OverflowError):
-            # Let the literal comparison below produce its normal result/error
-            # for malformed rows rather than inventing a pushdown decision.
             return row_value, literal
 
     return row_value, literal
 
 
 def _align_literal_to_reference(reference: datetime, literal: datetime) -> datetime:
-    """Return ``literal`` with tz-awareness matched to ``reference``.
-
-    Unlike :func:`_coerce_row_operands` (which aligns whichever of its two
-    arguments is naive to match the other, for a row-vs-literal comparison
-    where both returned values matter), label-pushdown call sites only want
-    one thing: a literal comparable against a label's own time_start/time_end
-    fields, which must never themselves be altered. Always adjusting the
-    literal -- never the reference -- keeps that call pattern correct in both
-    directions.
-    """
+    """Match ``literal``'s tz-awareness to ``reference``, never altering the label."""
 
     return align_timestamp(reference, literal)
 
 
 def label_visible_as_of(label: ChunkLabel, as_of: datetime) -> bool:
-    """Conservatively decide whether a chunk might hold rows visible as of a time.
+    """Return False only if no row in the chunk can be visible as of ``as_of``.
 
-    A base chunk (``transaction_time_start is None``) was learned at its own
-    valid time, one row at a time, so its earliest possible transaction time
-    is ``time_start``. A correction chunk carries a transaction-time zone map
-    (``transaction_time_start``/``_end``); ``transaction_time_start`` (the
-    conservative minimum) answers "could any row here be visible as of
-    ``as_of``," exactly mirroring how ``time_start`` alone answers the same
-    question for valid time in ``can_contain_time``'s ``"<="`` branch.
-    Either way, ``False`` here must mean "provably no row in this chunk can
-    be visible as of ``as_of``" -- the same conservative contract as every
-    other ``evaluate_against_label`` check.
+    Base chunks are learned at their own valid time, so ``time_start`` is their
+    earliest transaction time; correction chunks use ``transaction_time_start``.
     """
 
     if label.transaction_time_start is None:
@@ -140,20 +117,11 @@ class PredicateNode(ABC):
     def evaluate_against_label(
         self, label: ChunkLabel, price_pruning_enabled: bool = True
     ) -> bool:
-        """Return whether a chunk might contain matching rows.
+        """Return whether a chunk might contain matching rows (never a false negative).
 
-        This decision must be conservative: false positives are acceptable,
-        but a false negative would silently discard valid results.
-
-        ``price_pruning_enabled=False`` disables pruning based on a label's
-        price zone map only -- symbol and time pruning remain safe and
-        unaffected. A correction chunk's whole purpose is to override a base
-        row's value regardless of whether the correction's own value happens
-        to satisfy a value predicate the base row's original value did (or
-        didn't); pruning a correction chunk by price can hide it from
-        version resolution entirely, silently letting a stale base row win.
-        Callers pass ``False`` once a store has any correction chunk
-        anywhere (see ``ChunkStore.has_corrections`` / ``evaluate_pushdown``).
+        ``price_pruning_enabled=False`` disables price zone-map pruning only; it
+        is required once a store has corrections, which must stay visible to
+        version resolution.
         """
 
     @abstractmethod
@@ -162,13 +130,7 @@ class PredicateNode(ABC):
 
     @abstractmethod
     def evaluate_vectorized(self, df: pd.DataFrame) -> pd.Series:
-        """Return a boolean mask equivalent to evaluate_against_row per-row.
-
-        Used by QueryExecutor (the pushdown-query path) to avoid a
-        Python-level loop over rows. FullScanQueryEngine deliberately keeps
-        using evaluate_against_row instead, since it exists as the naive
-        baseline that the pushdown-query path is measured against.
-        """
+        """Return a boolean mask equivalent to ``evaluate_against_row`` per row."""
 
 
 @dataclass
@@ -196,9 +158,7 @@ class Comparison(PredicateNode):
         if self.label_field == "symbol":
             if self.operator == "=":
                 return label.can_contain_symbol(self.value)
-            # A label has only one symbol identity, but string range pushdown is
-            # intentionally unsupported. Keep every chunk as a candidate and
-            # let exact row evaluation implement <, >, <=, or >=.
+            # String range pushdown is unsupported; exact row evaluation decides.
             return True
 
         if self.label_field == "time":
@@ -210,7 +170,6 @@ class Comparison(PredicateNode):
                 return True
             return label.can_contain_price(self.operator, self.value)
 
-        # Defensive conservative fallback if a future label category is added.
         return True
 
     def evaluate_against_row(self, row: dict[str, Any]) -> bool:
@@ -292,7 +251,12 @@ class In(PredicateNode):
 
     def evaluate_vectorized(self, df: pd.DataFrame) -> pd.Series:
         column = df[self.column]
-        values = [_coerce_column_literal(column, value) for value in self.values]
+        # Series.isin matches NaN to NaN, unlike row-wise equality; drop NaN literals.
+        values = [
+            _coerce_column_literal(column, value)
+            for value in self.values
+            if not _is_nan(value)
+        ]
         return column.isin(values)
 
 
@@ -308,6 +272,21 @@ class AlwaysTrue(PredicateNode):
 
     def evaluate_vectorized(self, df: pd.DataFrame) -> pd.Series:
         return pd.Series(True, index=df.index)
+
+
+def iter_datetime_literals(predicate: PredicateNode):
+    """Yield every datetime literal held by a predicate tree."""
+
+    if isinstance(predicate, And):
+        for child in predicate.children:
+            yield from iter_datetime_literals(child)
+    elif isinstance(predicate, Comparison):
+        if isinstance(predicate.value, datetime):
+            yield predicate.value
+    elif isinstance(predicate, In):
+        for value in predicate.values:
+            if isinstance(value, datetime):
+                yield value
 
 
 def validate_predicate_columns(predicate: PredicateNode, columns: set[str]) -> None:
@@ -326,6 +305,7 @@ __all__ = [
     "Comparison",
     "In",
     "PredicateNode",
+    "iter_datetime_literals",
     "label_visible_as_of",
     "validate_predicate_columns",
 ]

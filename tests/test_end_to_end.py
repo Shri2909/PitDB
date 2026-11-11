@@ -224,7 +224,7 @@ def test_pipeline_stats_consistency(
     # Storage is raw float64 (no compression), so column bytes should exactly
     # match the raw payload size, not be strictly smaller than it.
     assert store.total_column_bytes == raw_value_bytes
-    assert summary["compression_ratio"] == pytest.approx(
+    assert summary["raw_to_stored_ratio"] == pytest.approx(
         raw_value_bytes / store.total_column_bytes
     )
 
