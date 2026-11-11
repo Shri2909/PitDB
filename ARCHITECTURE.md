@@ -8,12 +8,30 @@ flowchart LR
     C["Candidate chunks<br/>price pruning off if<br/>corrections exist"]
     V["All versions of each<br/>(symbol, event time)"]
     F["Keep versions with<br/>txn time at or before T"]
-    W["Greatest txn time wins<br/>tie: correction first,<br/>then last ingested"]
+    W["Greatest txn time wins<br/>tie: correction first,<br/>then last in chunk order"]
     P["Value predicates<br/>run after resolution"]
     R["Result rows"]
     C --> V --> F --> W --> P --> R
     Q --> F
 ```
+
+## Key design decisions
+
+Each choice favors a correct answer first and speed second. The last column is what it costs.
+
+| Decision | Why | Trade-off |
+|---|---|---|
+| Prune with per-chunk labels, conservatively | A chunk is skipped only when its label proves no row can match | Some chunks are kept needlessly; price pruning is off once corrections or duplicate keys exist |
+| Resolve versions before value predicates | Filtering physical rows first would drop a revision and expose the stale value | Surviving chunks are reconstructed and resolved before the exact filter, so broad queries gain little |
+| Store corrections as new versions with a transaction time | History is kept, so `AS OF` reproduces what was known; compaction merges chunks without dropping versions | Every version stays in memory; compaction only reduces chunk overhead |
+| Model base rows as learned at their event time | The engine cannot know when a provider first published a value | A model assumption, not a measured arrival time |
+| Immutable chunks and labels; accessors return copies | Callers cannot alter stored payloads or invalidate zone maps | Extra copying on read |
+| Raw, uncompressed `float64` columns | A simple, predictable layout with cheap labels | No storage saving; none is claimed |
+| Bounded SQL subset that rejects everything else | Silently ignoring `OR` or `ORDER BY` would return wrong rows | Narrow grammar; callers get `UnsupportedQueryError` |
+| Reject ambiguous time instead of guessing | DST-fold and DST-gap literals and mixed naive/aware timelines raise errors | Callers must supply unambiguous times |
+| Queries see finalized chunks only; ingestion and compaction are atomic | No half-built chunk is ever visible, and a failure rolls back | Call `flush_all()` before expecting buffered rows |
+| Monthly chunks by default; `hourly` strategy for one-minute data | Smaller chunks prune more but add label and index overhead | One benchmark favored quarterly over the monthly default, so the default is not claimed optimal |
+| Single process, in memory, methods serialized by a lock | The smallest design that supports the research use | No durability, transactions or reader isolation |
 
 ## Codemap
 
