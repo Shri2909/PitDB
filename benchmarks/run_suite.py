@@ -1,10 +1,4 @@
-"""Run all benchmark producers under one identity and export consistent charts.
-
-Correctness failures are collected so the summary can show every benchmark.
-Charts are suppressed if a benchmark fails or is incomplete. Chart failures
-are reported and return a nonzero suite status; prior artifacts are never
-used to fill a failed producer's output.
-"""
+"""Run all benchmark producers under one run identity and export charts."""
 
 from __future__ import annotations
 
@@ -23,8 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from benchmarks import bench_bitemporal, bench_chunk_granularity, bench_scale, run_all
-from benchmarks.bench_chunk_granularity import DEFAULT_GRANULARITY_KEY
-from benchmarks.report import format_pct, format_x, render_box_table
+from benchmarks.report import format_bytes, format_x, render_box_table
 from benchmarks.reporting import console
 from benchmarks.reporting.environment import git_commit, hardware_snapshot
 from benchmarks.reporting.provenance import RUN_ID_ENV
@@ -36,14 +29,7 @@ LOG_PATH = RESULTS_DIR / "suite_run.log"
 
 
 class _Tee(io.TextIOBase):
-    """Write to the real stdout and an in-memory buffer at the same time.
-
-    Exists so the suite runner can (a) count how many ``[WARNING]``/
-    ``[ERROR]`` lines the run produced and (b) save a complete plain-text
-    transcript to disk, without changing what the user sees on the
-    terminal -- every line still reaches the real stdout immediately, in
-    the same order, as it always did.
-    """
+    """Write to the real stdout and an in-memory buffer at the same time."""
 
     def __init__(self, real_stdout: Any) -> None:
         self._real_stdout = real_stdout
@@ -71,11 +57,7 @@ def _load_json(path: Path) -> dict[str, Any] | None:
 
 
 def _cpu_description(hardware: dict[str, Any]) -> str:
-    # platform.processor() is commonly empty on Linux -- fall back to
-    # platform.machine() (the architecture, e.g. "x86_64") rather than
-    # printing a blank field. Neither this project nor its pinned
-    # dependencies include a CPU-model-name library (e.g. py-cpuinfo), so
-    # a specific model name is not reliably available without adding one.
+    # platform.processor() is commonly empty on Linux.
     base = hardware.get("processor") or hardware.get("machine") or "unknown"
     logical = hardware.get("logical_cpu_count")
     physical = hardware.get("physical_cpu_count")
@@ -92,13 +74,7 @@ def _format_duration(seconds: float) -> str:
 
 
 def _run_benchmarks_1_and_2() -> tuple[list[str], list[str]]:
-    """Fixed queries/selectivity sweep + memory footprint, via run_all.run_all.
-
-    Both share one existing entry point and therefore one correctness gate
-    outcome: a failure here can only originate from Benchmark 1's query
-    correctness check (memory has no correctness gate of its own), so a
-    caught failure marks both rows FAILED -- Benchmark 2 never got to run.
-    """
+    """Run benchmarks 1 and 2 via ``run_all``; a correctness failure fails both."""
 
     try:
         result = run_all.run_all(include_memory=True)
@@ -120,14 +96,15 @@ def _run_benchmarks_1_and_2() -> tuple[list[str], list[str]]:
 
     memory = result.get("memory")
     if memory is not None:
-        raw_bytes = memory["raw_numeric_payload_bytes"]
-        packed_bytes = memory["column_payload_bytes"]
-        reduction = 1.0 - (packed_bytes / raw_bytes if raw_bytes else 0.0)
+        q1 = memory["traced_query_peaks"]["Q1"]["engines"]
         row_2 = [
             "2",
             "Memory footprint",
             "PASSED",
-            f"Numeric-buffer reduction: {format_pct(reduction)}",
+            "Q1 traced peak: "
+            f"{format_bytes(q1['pushdown_query']['median_peak_bytes'])} pushdown vs "
+            f"{format_bytes(q1['full_scan']['median_peak_bytes'])} row-wise "
+            "(storage is uncompressed; no reduction claimed)",
         ]
     else:
         row_2 = ["2", "Memory footprint", "N/A", "N/A (not run)"]
@@ -162,17 +139,20 @@ def _run_benchmark_4() -> list[str]:
 
     payload = _load_json(RESULTS_DIR / "bitemporal_sweep.json")
     points = (payload or {}).get("points") or []
-    as_of_speedup = None
+    primary = "AS OF: N/A (no corrections)"
     for entry in reversed(points):
-        as_of_post = entry["scenarios"].get("as_of_post_compaction")
-        if as_of_post is not None:
-            as_of_speedup = as_of_post["query_speedup"]
-            break
-    primary = (
-        f"AS OF speedup: {format_x(as_of_speedup)}"
-        if as_of_speedup is not None
-        else "AS OF speedup: N/A (no corrections)"
-    )
+        sweep = entry.get("as_of_sweep") or []
+        if not sweep:
+            continue
+        speedups = [point["scenario"]["query_speedup"] for point in sweep]
+        mid = next((p for p in sweep if p["is_primary"]), sweep[0])
+        primary = (
+            f"AS OF vs row-wise at {entry['label']} corrected: "
+            f"{format_x(min(speedups))}-{format_x(max(speedups))} across "
+            f"{len(sweep)} cutoffs (mid-history cutoff "
+            f"{format_x(mid['scenario']['query_speedup'])})"
+        )
+        break
     return ["4", "Corrections and compaction", "PASSED", primary]
 
 
@@ -183,12 +163,15 @@ def _run_benchmark_5() -> list[str]:
         return ["5", "Chunk-granularity trade-off", "FAILED", "SUPPRESSED"]
 
     payload = _load_json(RESULTS_DIR / "chunk_granularity_sweep.json")
-    points = (payload or {}).get("points") or []
-    default_point = next(
-        (point for point in points if point.get("key") == DEFAULT_GRANULARITY_KEY),
-        None,
-    )
-    primary = f"Default: {default_point['window']}" if default_point else "N/A"
+    findings = (payload or {}).get("findings")
+    if findings:
+        primary = (
+            f"Lowest pushdown latency: {findings['lowest_pushdown_label']} "
+            f"(engine default: {findings['configured_default_label']}; "
+            "single synthetic grid, no general default claimed)"
+        )
+    else:
+        primary = "N/A"
     return ["5", "Chunk-granularity trade-off", "PASSED", primary]
 
 
@@ -206,15 +189,11 @@ def _suite_run_identity():
 
 
 def run_suite() -> int:
-    """Run all five benchmarks, generate charts, and print one consolidated
-    suite summary. Returns 0 only when all benchmark gates and chart export
-    succeed; failures or incomplete runs return 1.
-    """
+    """Run all five benchmarks and charts; return 0 only if everything succeeded."""
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     started_at = datetime.now(timezone.utc)
 
-    # One run identity links all producers; restore the caller's environment.
     with _suite_run_identity(), _tee_stdout() as tee:
         rows: list[list[str]] = []
         row_1, row_2 = _run_benchmarks_1_and_2()
@@ -249,10 +228,6 @@ def run_suite() -> int:
 
         passed_count = sum(1 for row in rows if row[2] == "PASSED")
         failed_count = sum(1 for row in rows if row[2] == "FAILED")
-        # Suite-wide count of benchmarks whose correctness gate raised --
-        # not a count of individual queries/scenarios within a benchmark,
-        # which this suite-level summary does not track separately.
-        correctness_failures = failed_count
         suite_failed = passed_count != len(rows) or not charts_generated
 
         print()
@@ -302,7 +277,7 @@ def run_suite() -> int:
                 "Validation",
                 [
                     ("Benchmarks passed", f"{passed_count}/{len(rows)}"),
-                    ("Correctness failures", str(correctness_failures)),
+                    ("Correctness failures", str(failed_count)),
                     (
                         "Warnings",
                         str(tee.buffer.getvalue().count("[WARNING]")),
@@ -340,9 +315,6 @@ def run_suite() -> int:
         )
         print(f"  {overall_status}")
         print()
-        # 80-column, matching pitdb_title's own bar width above -- not
-        # console.rule() (96 columns), which belongs to the older style
-        # bench_scale.py still uses. See console.py's module docstring.
         print("=" * 80)
 
         transcript = tee.buffer.getvalue()

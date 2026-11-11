@@ -1,21 +1,9 @@
-"""Chunk-granularity tradeoff sweep for combined date-range + price-band queries.
-
-Graph 1/2's Q5 crossover (broad, 50%-selectivity query, ~2.9x speedup) isn't
-a bug -- once a query genuinely needs half the data, no zone map avoids
-reading half of it. What *is* addressable: for a combined predicate (date
-range AND price band), a coarser chunk means a coarser price zone map too,
-so tuning ChunkBoundary granularity trades ingestion/chunk-count overhead
-for pruning precision. This sweeps a few granularities against one fixed
-combined-predicate query and reports the actual measured curve -- evidence
-for an informed choice, not a change to MonthlyBoundary's status as the
-default.
-
-Uses interleaved three-engine timing, raw-sample summaries and exact output
-equality gates before reporting any speedup.
-"""
+"""Chunk-granularity tradeoff sweep for combined date-range + price-band queries."""
 
 from __future__ import annotations
 
+import math
+import statistics
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -48,9 +36,17 @@ from src.store.chunk_store import ChunkStore
 
 NUM_SYMBOLS = 10
 ROWS_PER_SYMBOL = 501  # matches bench_scale.py's Dataset-A-shaped row count
-QUERY_SYMBOL = "SYN000003"
-QUERY_NUM_TRIALS = 15
+QUERY_SYMBOL = "SYN000003"  # primary query's symbol
+EXTRA_QUERY_SYMBOLS = ("SYN000000", "SYN000007")
+# (label, inclusive start, exclusive end); the first window is the primary one.
+QUERY_WINDOWS = (
+    ("3 months", "2023-06-01", "2023-09-01"),
+    ("1 month", "2023-06-01", "2023-07-01"),
+    ("6 months", "2023-04-01", "2023-10-01"),
+)
+QUERY_NUM_TRIALS = 18
 QUERY_WARMUP = 3
+# The engine's shipped default; reported separately, not validated here.
 DEFAULT_GRANULARITY_KEY = "monthly"
 GRANULARITIES: list[dict[str, Any]] = [
     {
@@ -75,9 +71,7 @@ GRANULARITIES: list[dict[str, Any]] = [
 
 
 def run_granularity_point(granularity: dict[str, Any]) -> dict[str, Any]:
-    """Compute one granularity's full measurement set. Silent -- see
-    quiet=True below; nothing is printed here, only computed and returned.
-    """
+    """Compute one granularity's full measurement set without printing."""
 
     df = generate_synthetic_ohlcv(
         num_symbols=NUM_SYMBOLS, rows_per_symbol=ROWS_PER_SYMBOL, seed=1
@@ -89,40 +83,84 @@ def run_granularity_point(granularity: dict[str, Any]) -> dict[str, Any]:
     store.ingest_dataframe(df)
     ingest_seconds = time.perf_counter() - t0
 
-    # Post-hoc reads of already-built chunk labels, not new measurements.
     chunk_row_counts = [chunk.label.row_count for chunk in store.chunks]
     min_rows_per_chunk = min(chunk_row_counts)
     max_rows_per_chunk = max(chunk_row_counts)
-    # Deep sizeof of every chunk's label -- the same utility
-    # benchmarks/bench_memory.py uses for its own memory breakdown, reused
-    # here rather than reimplemented, each label measured independently
-    # (labels are never shared between chunks in this codebase).
+    # Labels are never shared between chunks, so each is measured independently.
     metadata_size_bytes = sum(_deep_size_bytes(chunk.label) for chunk in store.chunks)
 
-    # A price threshold that genuinely splits the query symbol's chunks:
-    # the median close price across its own history, not an arbitrary
-    # constant that might trivially match everything or nothing.
-    symbol_closes = df.loc[df["symbol"] == QUERY_SYMBOL, "close"]
-    price_threshold = float(symbol_closes.median())
+    symbols = [QUERY_SYMBOL] + [
+        symbol
+        for symbol in EXTRA_QUERY_SYMBOLS
+        if symbol != QUERY_SYMBOL and symbol in set(df["symbol"])
+    ]
+    per_query: list[dict[str, Any]] = []
+    primary: tuple[dict[str, Any], Any, str, float] | None = None
+    for symbol in symbols:
+        # Median close, so the price band genuinely splits the symbol's chunks.
+        price_threshold = float(df.loc[df["symbol"] == symbol, "close"].median())
+        for window_label, start, end in QUERY_WINDOWS:
+            sql = (
+                f"SELECT * FROM data WHERE symbol = '{symbol}' "
+                f"AND close > {price_threshold:.4f} "
+                f"AND timestamp >= '{start}' AND timestamp < '{end}'"
+            )
+            metrics, result = measure_query_paths(
+                store,
+                sql,
+                num_trials=QUERY_NUM_TRIALS,
+                warmup=QUERY_WARMUP,
+                query_name=f"granularity-{granularity['key']}-{symbol}-{window_label}",
+            )
+            is_primary = primary is None
+            per_query.append(
+                {
+                    "symbol": symbol,
+                    "window": window_label,
+                    "is_primary": is_primary,
+                    "query": sql,
+                    "price_threshold": price_threshold,
+                    "row_count": result.row_count,
+                    "candidate_chunks": result.pushdown.candidate_count,
+                    "chunks_skipped_ratio": result.pushdown.chunks_skipped_ratio,
+                    "row_wise_mean_ms": metrics["query_full_scan_mean_ms"],
+                    "vectorized_mean_ms": metrics["vectorized_full_scan"][
+                        "mean_latency_seconds"
+                    ]
+                    * 1000.0,
+                    "pushdown_mean_ms": metrics["query_pushdown_mean_ms"],
+                    "row_wise_over_pushdown": metrics["query_speedup"],
+                    "vectorized_over_pushdown": metrics["vectorized_full_scan_speedup"],
+                    "sample_count": metrics["pushdown_query"]["sample_count"],
+                }
+            )
+            if is_primary:
+                primary = (metrics, result, sql, price_threshold)
+    assert primary is not None
+    timing_metrics, pushdown_result, sql, price_threshold = primary
 
-    sql = (
-        f"SELECT * FROM data WHERE symbol = '{QUERY_SYMBOL}' "
-        f"AND close > {price_threshold:.4f} "
-        "AND timestamp >= '2023-06-01' AND timestamp < '2023-09-01'"
-    )
+    aggregate = {
+        "num_queries": len(per_query),
+        "symbols": symbols,
+        "windows": [label for label, _, _ in QUERY_WINDOWS],
+        "mean_row_wise_ms": statistics.fmean(q["row_wise_mean_ms"] for q in per_query),
+        "mean_vectorized_ms": statistics.fmean(
+            q["vectorized_mean_ms"] for q in per_query
+        ),
+        "mean_pushdown_ms": statistics.fmean(q["pushdown_mean_ms"] for q in per_query),
+        "geomean_row_wise_over_pushdown": math.exp(
+            statistics.fmean(math.log(q["row_wise_over_pushdown"]) for q in per_query)
+        ),
+        "mean_chunks_skipped_ratio": statistics.fmean(
+            q["chunks_skipped_ratio"] for q in per_query
+        ),
+        "method": (
+            "arithmetic mean of per-query mean latencies; geometric mean of "
+            "per-query speedups; unweighted over the symbol x window grid"
+        ),
+    }
 
-    timing_metrics, pushdown_result = measure_query_paths(
-        store,
-        sql,
-        num_trials=QUERY_NUM_TRIALS,
-        warmup=QUERY_WARMUP,
-        query_name=f"granularity-{granularity['key']}",
-    )
-
-    # Rows actually decompressed across every surviving candidate chunk --
-    # a post-hoc sum over already-known chunk row counts, not a new
-    # measurement -- distinct from row_count (rows returned after the exact
-    # predicate filter runs).
+    # Rows decompressed across candidate chunks, not rows returned after filtering.
     rows_scanned = sum(
         store.get_chunk(chunk_id).label.row_count
         for chunk_id in pushdown_result.pushdown.candidate_chunk_ids
@@ -151,6 +189,8 @@ def run_granularity_point(granularity: dict[str, Any]) -> dict[str, Any]:
         "row_count": pushdown_result.row_count,
         "full_scan_row_count": timing_metrics["full_scan"]["row_count"],
         "query": sql,
+        "queries": per_query,
+        "aggregate": aggregate,
         **timing_metrics,
     }
 
@@ -204,7 +244,7 @@ def _print_granularity_block(*, index: int, total: int, entry: dict[str, Any]) -
     print()
     print("Timing")
     box = render_box_table(
-        ["Engine", "Mean latency", "Approx. normal interval (raw mean)"],
+        ["Engine", "Mean latency", "Student-t interval (raw mean)"],
         [
             [
                 "Full scan",
@@ -234,12 +274,104 @@ def _print_granularity_block(*, index: int, total: int, entry: dict[str, Any]) -
             ]
         )
     )
+    aggregate = entry["aggregate"]
+    print()
+    print(
+        f"Query grid ({aggregate['num_queries']} queries: "
+        f"{len(aggregate['symbols'])} symbols x {len(aggregate['windows'])} windows)"
+    )
+    print()
+    print(
+        render_box_table(
+            [
+                "Symbol",
+                "Window",
+                "Rows",
+                "Chunks scanned",
+                "Row-wise",
+                "Vectorized",
+                "Pushdown",
+                "Row-wise / pushdown",
+            ],
+            [
+                [
+                    q["symbol"],
+                    q["window"] + (" (primary)" if q["is_primary"] else ""),
+                    f"{q['row_count']:,}",
+                    f"{q['candidate_chunks']:,}/{entry['total_chunks']:,}",
+                    format_ms(q["row_wise_mean_ms"]),
+                    format_ms(q["vectorized_mean_ms"]),
+                    format_ms(q["pushdown_mean_ms"]),
+                    format_x(q["row_wise_over_pushdown"]),
+                ]
+                for q in entry["queries"]
+            ],
+        )
+    )
+
+
+def summarize_granularity(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """Derive every headline statement from the measured points."""
+
+    lowest_pushdown = min(results, key=lambda e: e["aggregate"]["mean_pushdown_ms"])
+    lowest_row_wise = min(results, key=lambda e: e["aggregate"]["mean_row_wise_ms"])
+    finest_pruning = max(
+        results, key=lambda e: e["aggregate"]["mean_chunks_skipped_ratio"]
+    )
+    fewest_chunks = min(results, key=lambda e: e["total_chunks"])
+    highest_speedup = max(
+        results, key=lambda e: e["aggregate"]["geomean_row_wise_over_pushdown"]
+    )
+    default_entry = next(
+        (entry for entry in results if entry["key"] == DEFAULT_GRANULARITY_KEY), None
+    )
+    if default_entry is None:
+        default_vs_best = "configured default was not among the tested granularities"
+    elif default_entry["key"] == lowest_pushdown["key"]:
+        default_vs_best = (
+            f"the configured default ({default_entry['label']}) had the lowest "
+            "mean pushdown latency in this run"
+        )
+    else:
+        default_vs_best = (
+            f"the configured default ({default_entry['label']}) did NOT have "
+            f"the lowest mean pushdown latency; {lowest_pushdown['label']} did "
+            f"({format_ms(lowest_pushdown['aggregate']['mean_pushdown_ms'])} vs "
+            f"{format_ms(default_entry['aggregate']['mean_pushdown_ms'])})"
+        )
+    coarsest = min(results, key=lambda e: e["total_chunks"])
+    finest = max(results, key=lambda e: e["total_chunks"])
+    speedup_driver = (
+        f"From the coarsest ({coarsest['label']}, {coarsest['total_chunks']:,} "
+        f"chunks) to the finest ({finest['label']}, {finest['total_chunks']:,} "
+        "chunks) granularity, mean row-wise baseline latency goes from "
+        f"{format_ms(coarsest['aggregate']['mean_row_wise_ms'])} to "
+        f"{format_ms(finest['aggregate']['mean_row_wise_ms'])} and mean "
+        "pushdown latency from "
+        f"{format_ms(coarsest['aggregate']['mean_pushdown_ms'])} to "
+        f"{format_ms(finest['aggregate']['mean_pushdown_ms'])}. The speedup "
+        "ratio mixes both movements: a baseline that slows with chunk count "
+        "inflates it without any pushdown improvement, so the ratio alone "
+        "is not evidence that a granularity is better for pushdown."
+    )
+    return {
+        "lowest_pushdown_label": lowest_pushdown["label"],
+        "lowest_row_wise_label": lowest_row_wise["label"],
+        "finest_pruning_label": finest_pruning["label"],
+        "fewest_chunks_label": fewest_chunks["label"],
+        "highest_speedup_label": highest_speedup["label"],
+        "configured_default_key": DEFAULT_GRANULARITY_KEY,
+        "configured_default_label": default_entry["label"] if default_entry else None,
+        "default_matches_lowest_pushdown": bool(
+            default_entry and default_entry["key"] == lowest_pushdown["key"]
+        ),
+        "default_vs_best": default_vs_best,
+        "speedup_explanation": speedup_driver,
+    }
 
 
 def main() -> int:
-    # Silent, like the rest of the suite: every granularity is fully
-    # computed (quiet=True inside run_granularity_point) before anything
-    # prints.
+    # Everything is computed before anything prints.
     manifest = create_manifest(
         parameters={
             "benchmark": "chunk_granularity_sweep",
@@ -251,6 +383,8 @@ def main() -> int:
             ],
             "num_trials": QUERY_NUM_TRIALS,
             "warmup": QUERY_WARMUP,
+            "query_symbols": [QUERY_SYMBOL, *EXTRA_QUERY_SYMBOLS],
+            "query_windows": [list(window) for window in QUERY_WINDOWS],
             "synthetic_seed": 1,
         }
     )
@@ -259,16 +393,12 @@ def main() -> int:
     results_dir = PROJECT_ROOT / "benchmarks" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     output_path = results_dir / "chunk_granularity_sweep.json"
-    # "points" preserves every field this file has always written, plus the
-    # new fields added for this benchmark's exact-format output (window,
-    # metadata_size_bytes, chunks_pruned, full-scan CI) -- additive only.
-    # "generated_at_utc"/"git_commit"/"hardware" are new, additive
-    # provenance keys -- see BENCHMARK_OUTPUT_AUDIT.md Section 9, item 1.
     payload = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "git_commit": git_commit(),
         "hardware": hardware_snapshot(),
         "points": results,
+        "findings": summarize_granularity(results),
     }
     write_result(output_path, payload, manifest)
 
@@ -292,7 +422,13 @@ def main() -> int:
                     "Granularities tested",
                     ", ".join(entry["label"] for entry in results),
                 ),
-                ("Query", "date range + price range (SYN000003)"),
+                (
+                    "Queries",
+                    f"{results[0]['aggregate']['num_queries']}: "
+                    f"{', '.join(results[0]['aggregate']['symbols'])} x "
+                    f"{', '.join(results[0]['aggregate']['windows'])}, each "
+                    "with a median-close price band",
+                ),
                 ("Warmup runs", str(QUERY_WARMUP)),
                 ("Measured runs", str(QUERY_NUM_TRIALS)),
             ],
@@ -306,71 +442,77 @@ def main() -> int:
     print(console.dash_section("[TRADE-OFF SUMMARY]"))
     print()
     print(
+        console.wrap_text(
+            "Latencies are means across the query grid; pushdown and the "
+            "row-wise baseline are shown separately because their ratio "
+            "mixes both.",
+            indent=0,
+        )
+    )
+    print()
+    print(
         render_box_table(
             [
                 "Granularity",
                 "Chunks",
                 "Rows/chunk",
-                "Pruning rate",
-                "Pushdown",
-                "Speedup",
+                "Pruning rate (mean)",
+                "Pushdown (mean)",
+                "Row-wise (mean)",
+                "Vectorized (mean)",
+                "Row-wise / pushdown (geomean)",
             ],
             [
                 [
                     entry["label"],
                     f"{entry['total_chunks']:,}",
                     f"{entry['avg_rows_per_chunk']:.1f}",
-                    format_pct(entry["chunks_skipped_ratio"]),
-                    format_ms(entry["query_pushdown_mean_ms"]),
-                    format_x(entry["query_speedup"]),
+                    format_pct(entry["aggregate"]["mean_chunks_skipped_ratio"]),
+                    format_ms(entry["aggregate"]["mean_pushdown_ms"]),
+                    format_ms(entry["aggregate"]["mean_row_wise_ms"]),
+                    format_ms(entry["aggregate"]["mean_vectorized_ms"]),
+                    format_x(entry["aggregate"]["geomean_row_wise_over_pushdown"]),
                 ]
                 for entry in results
             ],
         )
     )
 
-    finest_pruning = max(results, key=lambda entry: entry["chunks_skipped_ratio"])
-    fewest_chunks = min(results, key=lambda entry: entry["total_chunks"])
-    lowest_latency = min(results, key=lambda entry: entry["query_pushdown_mean_ms"])
-    default_entry = next(
-        entry for entry in results if entry["key"] == DEFAULT_GRANULARITY_KEY
-    )
-
+    findings = summarize_granularity(results)
+    default_label = findings["configured_default_label"]
     print()
-    print("Trade-off interpretation")
+    print("Measured findings (data-driven; this run only)")
     print(
         console.field_block(
             [
-                ("Finest pruning", finest_pruning["label"]),
-                ("Fewest managed chunks", fewest_chunks["label"]),
-                ("Lowest measured latency", lowest_latency["label"]),
-                ("Selected default", default_entry["label"]),
-                (
-                    "Selection rationale",
-                    f"{default_entry['label']} pruned "
-                    f"{format_pct(default_entry['chunks_skipped_ratio'])} of "
-                    f"chunks with {format_x(default_entry['query_speedup'])} "
-                    f"speedup at {default_entry['total_chunks']:,} chunks, "
-                    "vs. "
-                    + "; ".join(
-                        f"{entry['label']}: "
-                        f"{format_pct(entry['chunks_skipped_ratio'])} pruned, "
-                        f"{format_x(entry['query_speedup'])} speedup, "
-                        f"{entry['total_chunks']:,} chunks"
-                        for entry in results
-                        if entry["key"] != DEFAULT_GRANULARITY_KEY
-                    ),
-                ),
+                ("Lowest mean pushdown latency", findings["lowest_pushdown_label"]),
+                ("Lowest mean row-wise latency", findings["lowest_row_wise_label"]),
+                ("Highest mean pruning rate", findings["finest_pruning_label"]),
+                ("Fewest managed chunks", findings["fewest_chunks_label"]),
+                ("Highest speedup ratio", findings["highest_speedup_label"]),
+                ("Configured engine default", default_label or "N/A"),
+                ("Default vs measured best", findings["default_vs_best"]),
             ]
         )
     )
     print()
     print(
         console.titled_paragraph(
+            "Reading the speedup column",
+            findings["speedup_explanation"],
+        )
+    )
+    print()
+    print(
+        console.titled_paragraph(
             "Limitation",
-            "The best granularity depends on query shape, dataset "
-            "distribution, and storage workload. No universal optimum is "
-            "claimed.",
+            f"Synthetic data, {NUM_SYMBOLS} symbols x {ROWS_PER_SYMBOL} rows, "
+            f"{results[0]['aggregate']['num_queries']} queries (one symbol "
+            "set, three date windows, a median-close price band) on one "
+            "machine. This benchmark cannot justify a general default: the "
+            "best granularity depends on query shape, dataset distribution "
+            "and write workload, and differences between granularities may "
+            "be within run-to-run noise. No universal optimum is claimed.",
         )
     )
 
@@ -381,7 +523,9 @@ def main() -> int:
             [
                 ("Correctness", "PASSED FOR ALL GRANULARITIES"),
                 ("Tested granularities", str(len(results))),
-                ("Recommended default", default_entry["label"]),
+                ("Lowest mean pushdown latency", findings["lowest_pushdown_label"]),
+                ("Configured engine default", default_label or "N/A"),
+                ("Default vs measured best", findings["default_vs_best"]),
                 ("Result artifact", str(output_path)),
             ]
         )

@@ -1,20 +1,9 @@
-"""Bitemporal correction-volume sweep.
-
-Measures how the cost of transaction-time versioning grows as the fraction
-of corrected rows increases relative to base data: ingest_correction
-throughput, compact_corrections() throughput, isolated AS OF
-pushdown-pruning cost, and end-to-end AS OF query latency (pushdown vs.
-full-scan) -- each measured **both before and after** compact_corrections(),
-so the actual effect of compaction is always visible directly in this
-benchmark's own output, never requiring an ad hoc script to see it.
-
-Uses interleaved three-engine timing, raw-sample summaries and exact output
-checks. Before/after comparisons are descriptive; they are not significance
-tests and compaction is necessarily measured after the original state.
-"""
+"""Bitemporal correction-volume sweep, measured before and after compaction."""
 
 from __future__ import annotations
 
+import bisect
+import math
 import sys
 import time
 from datetime import datetime, timezone
@@ -38,9 +27,7 @@ from benchmarks.reporting.provenance import (
     dataframe_fingerprint,
     write_result,
 )
-from benchmarks.stats import (
-    intervals_overlap,
-)
+from benchmarks.stats import intervals_overlap
 from benchmarks.synthetic_data import generate_synthetic_ohlcv
 from src.query.predicate import PredicateNode
 from src.query.pushdown import evaluate_pushdown
@@ -53,47 +40,103 @@ ROWS_PER_SYMBOL = 501  # matches bench_scale.py's Dataset-A-shaped row count
 CORRECTION_RATES = [0.0, 0.01, 0.05, 0.20, 0.50]
 QUERY_NUM_TRIALS = DEFAULT_NUM_TRIALS  # matches benchmarks/config.py's convention
 QUERY_WARMUP = 2
+# Fractions of correction versions made visible by each swept AS OF cutoff.
+VISIBLE_FRACTIONS = (0.0, 0.25, 0.50, 0.75, 1.0)
+PRIMARY_VISIBLE_FRACTION = 0.50
+MAX_VERSIONS_PER_KEY = 3
+MAX_LAG_DAYS = 90
 PUSHDOWN_ISOLATED_TRIALS = 50
 
 
 def apply_corrections(
     df: pd.DataFrame, correction_rate: float, seed: int
 ) -> list[dict[str, Any]]:
-    """Select a deterministic fraction of rows and build correction events.
+    """Build correction events for a deterministic fraction of base rows.
 
-    Every selected (symbol, timestamp) row is corrected to a bumped close
-    price, with a fixed transaction-time lag (one day after the dataset's
-    last observed timestamp) -- every correction is uniformly "learned"
-    well after every base row.
+    Each key gets 1-3 versions (60/30/10%), each learned 1-90 days after the last.
     """
-
     if not 0.0 <= correction_rate <= 1.0:
         raise ValueError("correction_rate must be within [0.0, 1.0]")
 
-    num_corrections = int(round(len(df) * correction_rate))
-    if num_corrections == 0:
+    num_keys = int(round(len(df) * correction_rate))
+    if num_keys == 0:
         return []
 
     rng = np.random.default_rng(seed)
-    selected = rng.choice(len(df), size=num_corrections, replace=False)
-    transaction_time = df["timestamp"].max() + pd.Timedelta(days=1)
+    selected = rng.choice(len(df), size=num_keys, replace=False)
+    version_counts = rng.choice(
+        np.arange(1, MAX_VERSIONS_PER_KEY + 1), size=num_keys, p=[0.6, 0.3, 0.1]
+    )
 
     corrections: list[dict[str, Any]] = []
-    for position in selected:
+    for key_index, (position, versions) in enumerate(zip(selected, version_counts)):
         row = df.iloc[position]
-        values = np.array(
-            [row.open, row.high, row.low, row.close * 1.05, row.volume],
-            dtype=np.float64,
-        )
-        corrections.append(
-            {
-                "timestamp": row.timestamp,
-                "symbol": row.symbol,
-                "values": values,
-                "transaction_time": transaction_time,
-            }
-        )
+        transaction_time = row.timestamp
+        for version in range(1, int(versions) + 1):
+            transaction_time = transaction_time + pd.Timedelta(
+                days=int(rng.integers(1, MAX_LAG_DAYS + 1))
+            )
+            values = np.array(
+                [
+                    row.open,
+                    row.high,
+                    row.low,
+                    row.close * (1.0 + 0.05 * version),
+                    row.volume,
+                ],
+                dtype=np.float64,
+            )
+            corrections.append(
+                {
+                    "timestamp": row.timestamp,
+                    "symbol": row.symbol,
+                    "values": values,
+                    "transaction_time": transaction_time,
+                    "key_index": key_index,
+                    "version": version,
+                }
+            )
     return corrections
+
+
+def as_of_cutoffs(
+    df: pd.DataFrame, corrections: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Cutoffs making ~0/25/50/75/100% of versions visible, plus end of base data."""
+
+    transaction_times = sorted(c["transaction_time"] for c in corrections)
+    count = len(transaction_times)
+    cutoffs: list[dict[str, Any]] = []
+    for fraction in VISIBLE_FRACTIONS:
+        if fraction == 0.0:
+            cutoff = transaction_times[0] - pd.Timedelta(days=1)
+            label = "0% of versions"
+        else:
+            cutoff = transaction_times[max(0, math.ceil(fraction * count) - 1)]
+            label = f"{fraction:.0%} of versions"
+        cutoffs.append(_cutoff_entry(cutoff, label, fraction, transaction_times))
+    cutoffs.append(
+        _cutoff_entry(
+            df["timestamp"].max(), "end of base data", None, transaction_times
+        )
+    )
+    return cutoffs
+
+
+def _cutoff_entry(
+    cutoff: pd.Timestamp,
+    label: str,
+    target_fraction: float | None,
+    sorted_transaction_times: list[Any],
+) -> dict[str, Any]:
+    visible = bisect.bisect_right(sorted_transaction_times, cutoff)
+    return {
+        "label": label,
+        "target_visible_fraction": target_fraction,
+        "cutoff": cutoff,
+        "visible_versions": visible,
+        "visible_fraction": visible / len(sorted_transaction_times),
+    }
 
 
 def measure_scenario(
@@ -104,13 +147,7 @@ def measure_scenario(
     sql: str,
     query_name: str,
 ) -> dict[str, Any]:
-    """Measure isolated pushdown-eval cost and end-to-end query latency for
-    one (AS OF value, SQL) scenario against the store's *current* state.
-
-    Called twice per scenario (before and after compact_corrections()) so
-    the caller can compare the two dicts this returns directly.
-    """
-
+    """Measure isolated pushdown-eval cost and query latency for one scenario."""
     pushdown_times = np.empty(PUSHDOWN_ISOLATED_TRIALS, dtype=np.float64)
     for trial in range(PUSHDOWN_ISOLATED_TRIALS):
         t0 = time.perf_counter()
@@ -149,7 +186,6 @@ def _compare(
     label: str, before: dict[str, Any], after: dict[str, Any]
 ) -> dict[str, Any]:
     """Describe before/after estimates; overlapping intervals are not a test."""
-
     overlap = intervals_overlap(
         before["query_pushdown_ci95_low_ms"],
         before["query_pushdown_ci95_high_ms"],
@@ -166,15 +202,7 @@ def _compare(
 
 
 def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]:
-    """Compute one correction level's full before/after measurement set.
-
-    Silent: nothing is printed here (see quiet=True inside
-    measure_scenario) -- this function only computes and returns data, so
-    the exact-format per-level block (_print_correction_level) can be
-    printed as one complete, self-contained unit once every value it needs
-    already exists.
-    """
-
+    """Compute one correction level's full before/after measurement set."""
     df = generate_synthetic_ohlcv(
         num_symbols=NUM_SYMBOLS, rows_per_symbol=ROWS_PER_SYMBOL, seed=1
     )
@@ -205,18 +233,25 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
     where_clause = "timestamp >= '2023-01-01'"
     predicate = parse_where_clause(f"SELECT * FROM data WHERE {where_clause}")
     current_sql = f"SELECT * FROM data WHERE {where_clause}"
-    as_of_value = df["timestamp"].max() if corrections else None
-    as_of_sql = (
-        f"SELECT * FROM data TIMESTAMP AS OF '{as_of_value.isoformat()}' "
-        f"WHERE {where_clause}"
-        if corrections
-        else None
-    )
 
-    # Pre-compaction measurement, taken before compact_corrections() is ever
-    # called, so the effect of compaction below is a real before/after
-    # comparison -- not two already-compacted runs compared against each
-    # other, which is not the same thing.
+    def as_of_sql_for(cutoff: pd.Timestamp) -> str:
+        return (
+            f"SELECT * FROM data TIMESTAMP AS OF '{cutoff.isoformat()}' "
+            f"WHERE {where_clause}"
+        )
+
+    cutoffs = as_of_cutoffs(df, corrections) if corrections else []
+    primary_cutoff = next(
+        (
+            entry
+            for entry in cutoffs
+            if entry["target_visible_fraction"] == PRIMARY_VISIBLE_FRACTION
+        ),
+        None,
+    )
+    as_of_value = primary_cutoff["cutoff"] if primary_cutoff else None
+    as_of_sql = as_of_sql_for(as_of_value) if primary_cutoff else None
+
     current_pre = measure_scenario(
         store=store,
         predicate=predicate,
@@ -226,27 +261,38 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
     )
 
     as_of_pre = None
-    if corrections:
-        as_of_pre = measure_scenario(
+    as_of_sweep: list[dict[str, Any]] = []
+    for cutoff_entry in cutoffs:
+        is_primary = cutoff_entry is primary_cutoff
+        scenario = measure_scenario(
             store=store,
             predicate=predicate,
-            as_of_value=as_of_value,
-            sql=as_of_sql,
-            query_name=f"bitemporal-{label}-as_of-pre",
+            as_of_value=cutoff_entry["cutoff"],
+            sql=as_of_sql_for(cutoff_entry["cutoff"]),
+            query_name=f"bitemporal-{label}-as_of-pre-{cutoff_entry['label']}",
         )
+        scenario["as_of_cutoff"] = cutoff_entry["cutoff"].isoformat()
+        scenario["visible_correction_versions"] = cutoff_entry["visible_versions"]
+        scenario["visible_correction_fraction"] = cutoff_entry["visible_fraction"]
+        as_of_sweep.append(
+            {
+                "label": cutoff_entry["label"],
+                "target_visible_fraction": cutoff_entry["target_visible_fraction"],
+                "cutoff": cutoff_entry["cutoff"].isoformat(),
+                "visible_correction_versions": cutoff_entry["visible_versions"],
+                "visible_correction_fraction": cutoff_entry["visible_fraction"],
+                "is_primary": is_primary,
+                "storage_state": "before compaction",
+                "scenario": scenario,
+            }
+        )
+        if is_primary:
+            as_of_pre = scenario
 
-    # Reflects the recommended production workflow: ingest_correction stays
-    # cheap and never blocks (measured above), consolidation happens later
-    # via this explicit, idempotent maintenance call. Timed directly, not
-    # inferred.
     t0 = time.perf_counter()
     compacted = store.compact_corrections()
     compaction_seconds = time.perf_counter() - t0
-    # Rows actually replayed through compact_corrections() -- every
-    # correction row gets re-read once per compaction pass, regardless of
-    # how many chunks that collapses into. 0 when there is nothing to
-    # compact (guards divide-by-zero rather than reporting a fabricated
-    # rate).
+    # Every correction row is replayed once per pass; 0 when nothing to compact.
     compaction_rows_per_second = (
         len(corrections) / compaction_seconds
         if corrections and compaction_seconds > 0
@@ -274,9 +320,21 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
             sql=as_of_sql,
             query_name=f"bitemporal-{label}-as_of-post",
         )
+        as_of_post["as_of_cutoff"] = as_of_value.isoformat()
+        as_of_post["visible_correction_versions"] = primary_cutoff["visible_versions"]
+        as_of_post["visible_correction_fraction"] = primary_cutoff["visible_fraction"]
         as_of_comparison = _compare(
             "as_of pre-vs-post compaction", as_of_pre, as_of_post
         )
+
+    highest_version: dict[int, int] = {}
+    for correction in corrections:
+        key = correction["key_index"]
+        highest_version[key] = max(highest_version.get(key, 0), correction["version"])
+    versions_per_key = {
+        str(version): sum(1 for top in highest_version.values() if top == version)
+        for version in range(1, MAX_VERSIONS_PER_KEY + 1)
+    }
 
     entry = {
         "fixture": fixture,
@@ -287,9 +345,21 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
         "label": label,
         "correction_rate": correction_rate,
         "as_of_cutoff": as_of_value.isoformat() if as_of_value is not None else None,
+        "as_of_scenario": (
+            "mid-history: the primary cutoff makes "
+            f"{PRIMARY_VISIBLE_FRACTION:.0%} of correction versions visible "
+            "(and hides base rows learned after it); corrections are 1-"
+            f"{MAX_VERSIONS_PER_KEY} versions per key with 1-{MAX_LAG_DAYS} day "
+            "lags. See as_of_sweep for the other cutoffs."
+            if corrections
+            else None
+        ),
+        "as_of_sweep": as_of_sweep,
         "base_rows": base_rows,
         "base_chunks": base_chunks,
         "num_corrections": len(corrections),
+        "num_corrected_keys": len({c["key_index"] for c in corrections}),
+        "versions_per_key": versions_per_key,
         "correction_chunks": chunks_before_compaction - base_chunks,
         "chunks_before_compaction": chunks_before_compaction,
         "correction_seconds": correction_seconds,
@@ -319,10 +389,7 @@ def run_correction_rate(*, label: str, correction_rate: float) -> dict[str, Any]
 
 
 def _correctness_status(scenario: dict[str, Any] | None) -> str:
-    """PASSED if the scenario was measured (and therefore already passed
-    the correctness gate inside measure_scenario -- reaching this point at
-    all requires that), else an explicit reason it wasn't measured."""
-
+    """PASSED if measured (it already cleared the correctness gate), else N/A."""
     return "PASSED" if scenario is not None else "N/A (no corrections exist yet)"
 
 
@@ -354,12 +421,7 @@ def _pruning_row(name: str, scenario: dict[str, Any] | None) -> list[str]:
 
 
 def _print_correction_level(*, index: int, total: int, entry: dict[str, Any]) -> None:
-    """Print one correction level's complete before/after block.
-
-    Every value used here is already fully computed in ``entry`` (see
-    ``run_correction_rate``) -- this function only formats and lays it out.
-    """
-
+    """Print one correction level's complete before/after block."""
     scenarios = entry["scenarios"]
     current_pre = scenarios["current_pre_compaction"]
     as_of_pre = scenarios.get("as_of_pre_compaction")
@@ -374,7 +436,8 @@ def _print_correction_level(*, index: int, total: int, entry: dict[str, Any]) ->
         console.titled_block(
             "Correction workload",
             [
-                ("Corrections", f"{entry['num_corrections']:,}"),
+                ("Correction versions", f"{entry['num_corrections']:,}"),
+                ("Corrected keys", f"{entry['num_corrected_keys']:,}"),
                 ("Corrected-row percentage", format_pct(entry["correction_rate"])),
                 ("Ingestion time", f"{entry['correction_seconds'] * 1000:.3f} ms"),
                 (
@@ -438,6 +501,39 @@ def _print_correction_level(*, index: int, total: int, entry: dict[str, Any]) ->
             ],
         )
     )
+
+    if entry["as_of_sweep"]:
+        print()
+        print("Historical AS OF cutoff sweep (before compaction)")
+        print()
+        print(
+            render_box_table(
+                [
+                    "Cutoff makes visible",
+                    "Versions visible",
+                    "Rows returned",
+                    "Pruning rate",
+                    "Row-wise",
+                    "Pushdown",
+                    "vs. row-wise",
+                    "vs. vectorized",
+                ],
+                [
+                    [
+                        point["label"] + (" (primary)" if point["is_primary"] else ""),
+                        f"{point['visible_correction_versions']:,} "
+                        f"({format_pct(point['visible_correction_fraction'])})",
+                        f"{point['scenario']['row_count']:,}",
+                        format_pct(point["scenario"]["chunks_skipped_ratio"]),
+                        format_ms(point["scenario"]["query_full_scan_mean_ms"]),
+                        format_ms(point["scenario"]["query_pushdown_mean_ms"]),
+                        format_x(point["scenario"]["query_speedup"]),
+                        format_x(point["scenario"]["vectorized_full_scan_speedup"]),
+                    ]
+                    for point in entry["as_of_sweep"]
+                ],
+            )
+        )
 
     print()
     print(console.dash_section("[COMPACTION]"))
@@ -544,17 +640,27 @@ def _current_state_trend(results: list[dict[str, Any]]) -> str:
 
 
 def _as_of_trend(results: list[dict[str, Any]]) -> str:
+    """Describe the measured AS OF speedup range across the cutoff sweep."""
+
     with_corrections = [entry for entry in results if entry["num_corrections"] > 0]
     if not with_corrections:
         return "No corrections were applied in this sweep; AS OF was never measured."
-    first, last = with_corrections[0], with_corrections[-1]
-    first_speedup = first["scenarios"]["as_of_pre_compaction"]["query_speedup"]
-    last_speedup = last["scenarios"]["as_of_pre_compaction"]["query_speedup"]
-    direction = "grew" if last_speedup >= first_speedup else "fell"
+    entry = with_corrections[-1]
+    points = entry["as_of_sweep"]
+    speedups = [(point["scenario"]["query_speedup"], point) for point in points]
+    low, low_point = min(speedups, key=lambda item: item[0])
+    high, high_point = max(speedups, key=lambda item: item[0])
+    primary = next(point for point in points if point["is_primary"])
     return (
-        f"Pre-compaction speedup {direction} from {format_x(first_speedup)} at "
-        f"{first['label']} corrected to {format_x(last_speedup)} at "
-        f"{last['label']} corrected."
+        f"At {entry['label']} corrected ({entry['num_corrections']:,} versions "
+        f"over {entry['num_corrected_keys']:,} keys), AS OF speedup vs. the "
+        f"row-wise scan ranged {format_x(low)} (cutoff showing "
+        f"{low_point['label']}) to {format_x(high)} (cutoff showing "
+        f"{high_point['label']}) across {len(points)} cutoffs; the primary "
+        f"mid-history cutoff ({primary['label']} visible) gave "
+        f"{format_x(primary['scenario']['query_speedup'])} with "
+        f"{format_pct(primary['scenario']['chunks_skipped_ratio'])} of chunks "
+        "pruned."
     )
 
 
@@ -575,13 +681,14 @@ def _compaction_trend(results: list[dict[str, Any]]) -> str:
 
 
 def main() -> int:
-    # Silent, like Benchmarks 1 and 2: every correction level is fully
-    # computed (quiet=True inside measure_scenario) before anything prints,
-    # so the header and Configuration block below can report real base-row
-    # counts and the actual AS OF cutoff instead of placeholders.
+    # Everything is computed before anything prints.
     manifest = create_manifest(
         parameters={
             "benchmark": "bitemporal_sweep",
+            "visible_fractions": list(VISIBLE_FRACTIONS),
+            "primary_visible_fraction": PRIMARY_VISIBLE_FRACTION,
+            "max_versions_per_key": MAX_VERSIONS_PER_KEY,
+            "max_lag_days": MAX_LAG_DAYS,
             "num_symbols": NUM_SYMBOLS,
             "rows_per_symbol": ROWS_PER_SYMBOL,
             "correction_rates": CORRECTION_RATES,
@@ -599,9 +706,6 @@ def main() -> int:
     results_dir = PROJECT_ROOT / "benchmarks" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     output_path = results_dir / "bitemporal_sweep.json"
-    # "points" is byte-identical to what this file has always written;
-    # "generated_at_utc"/"git_commit"/"hardware" are new, additive
-    # provenance keys only -- see BENCHMARK_OUTPUT_AUDIT.md Section 9, item 1.
     payload = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "git_commit": git_commit(),
@@ -624,13 +728,12 @@ def main() -> int:
         )
     )
 
-    as_of_cutoffs = {
-        entry["as_of_cutoff"] for entry in results if entry["as_of_cutoff"]
-    }
-    if len(as_of_cutoffs) == 1:
-        as_of_cutoff_display = next(iter(as_of_cutoffs))
-    elif as_of_cutoffs:
-        as_of_cutoff_display = "varies by correction level"
+    if any(entry["as_of_cutoff"] for entry in results):
+        as_of_cutoff_display = (
+            f"sweep of {len(VISIBLE_FRACTIONS) + 1} cutoffs per level; primary = "
+            f"{PRIMARY_VISIBLE_FRACTION:.0%} of correction versions visible "
+            "(mid-history, varies by level)"
+        )
     else:
         as_of_cutoff_display = "N/A (no corrections in this sweep)"
 
@@ -641,6 +744,11 @@ def main() -> int:
             [
                 ("Base rows", f"{results[0]['base_rows']:,}"),
                 ("Correction levels", str(len(CORRECTION_RATES))),
+                (
+                    "Correction model",
+                    f"1-{MAX_VERSIONS_PER_KEY} versions per corrected key, each "
+                    f"learned 1-{MAX_LAG_DAYS} days after the previous",
+                ),
                 ("Historical AS OF cutoff", as_of_cutoff_display),
                 ("Compaction policy", "monthly (same granularity as base store)"),
                 ("Warmup runs", str(QUERY_WARMUP)),
@@ -658,10 +766,10 @@ def main() -> int:
     print(
         render_box_table(
             [
-                "Corrections",
-                "Percent",
+                "Versions",
+                "Corrected rows",
                 "Current-state speedup (before/after)",
-                "Historical AS OF speedup (before/after)",
+                "AS OF speedup, primary cutoff (before/after)",
                 "Compaction runtime",
             ],
             _sweep_summary_rows(results),
@@ -686,15 +794,20 @@ def main() -> int:
         console.titled_paragraph(
             "Interpretation",
             "Historical AS OF queries can reject correction chunks whose "
-            "transaction times occur after the requested cutoff.",
+            "transaction times occur after the requested cutoff. The pruning "
+            "and speedup actually obtained depend on how many correction "
+            "versions the cutoff leaves visible (see the AS OF sweep tables "
+            "and the trend line above); no single AS OF speedup describes "
+            "every cutoff.",
         )
     )
     print()
     print(
         console.titled_paragraph(
             "Limitation",
-            "Performance conclusions apply only to the tested correction "
-            "distributions and compaction policy.",
+            "Performance conclusions apply only to the tested synthetic "
+            "correction model (random lags of 1-90 days, up to 3 versions per "
+            "key, 20 symbols, 501 rows each) and compaction policy.",
         )
     )
     print()

@@ -1,10 +1,4 @@
-"""End-to-end query benchmarks for the full-scan and pushdown-query paths.
-
-The benchmark deliberately times complete SQL execution, including parsing,
-chunk decompression, and exact row filtering. The full-scan baseline and the
-pushdown-indexed executor receive the same SQL and their exact outputs are
-compared before any speedup is reported.
-"""
+"""End-to-end query benchmarks for the full-scan and pushdown-query paths."""
 
 from __future__ import annotations
 
@@ -15,6 +9,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from benchmarks.config import (
+    BENCHMARK_QUERIES,
+    NUM_TRIALS,
+    SELECTIVITY_SWEEP_TARGETS,
+    WARMUP_RUNS,
+)
 from benchmarks.reporting.validation import assert_equivalent_and_report
 from benchmarks.stats import (
     intervals_overlap,
@@ -24,35 +24,6 @@ from benchmarks.stats import (
 from src.baselines.full_scan import FullScanQueryEngine
 from src.query.executor import QueryExecutor, QueryResult
 from src.store.chunk_store import ChunkStore
-
-try:
-    from benchmarks.config import (
-        BENCHMARK_QUERIES,
-        NUM_TRIALS,
-        SELECTIVITY_SWEEP_TARGETS,
-        WARMUP_RUNS,
-    )
-except ModuleNotFoundError:
-    # Keep this module independently usable until config.py is introduced.
-    NUM_TRIALS = 15
-    WARMUP_RUNS = 3
-    BENCHMARK_QUERIES = {
-        "Q1": ("SELECT * FROM data WHERE symbol = 'AAPL' AND date = '2024-03-01'"),
-        "Q2": (
-            "SELECT * FROM data WHERE symbol = 'AAPL' "
-            "AND date >= '2024-03-01' AND date < '2024-04-01'"
-        ),
-        "Q3": (
-            "SELECT * FROM data WHERE symbol IN ('AAPL', 'MSFT') "
-            "AND date >= '2024-03-01' AND date < '2024-03-08'"
-        ),
-        "Q4": (
-            "SELECT * FROM data WHERE symbol = 'AAPL' AND price > 200 "
-            "AND date >= '2024-01-01'"
-        ),
-        "Q5": "SELECT * FROM data WHERE date >= '2024-01-01'",
-    }
-    SELECTIVITY_SWEEP_TARGETS = [1.0, 0.5, 0.1, 0.01, 0.001]
 
 
 def _validate_benchmark_configuration() -> None:
@@ -71,7 +42,6 @@ def _assert_equivalent(
     query_name: str,
 ) -> None:
     """Require the same ordered rows, values, columns, dtypes, and duplicates."""
-
     if full_scan_result.row_count != pushdown_result.row_count:
         raise AssertionError(
             f"{query_name}: full scan returned {full_scan_result.row_count} "
@@ -97,10 +67,7 @@ def _latency_metrics(times: np.ndarray, result: QueryResult) -> dict[str, Any]:
 def annotate_pairwise_significance(
     fixed_query_results: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Describe interval overlap without claiming statistical significance.
-
-    The historical function name is retained for import compatibility.
-    """
+    """Describe adjacent-query CI overlap (descriptive, not a significance test)."""
 
     names = list(fixed_query_results.keys())
     comparisons: list[dict[str, Any]] = []
@@ -142,13 +109,7 @@ def _benchmark_pair(
     num_trials: int | None = None,
     warmup: int | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], float, QueryResult]:
-    """Time both paths under identical controls and prove equivalence.
-
-    ``quiet=True`` suppresses only the correctness PASS-path print (see
-    ``assert_equivalent_and_report``) for callers that will re-render the
-    outcome themselves elsewhere -- the assertion and its exception
-    behavior on failure are unaffected either way.
-    """
+    """Time both paths under identical controls and prove equivalence."""
 
     vectorized_engine = QueryExecutor(pushdown_engine.store, enable_pruning=False)
     samples, results, acquisition_order = time_interleaved(
@@ -170,10 +131,6 @@ def _benchmark_pair(
         results["vectorized_full_scan"],
         query_name=f"{query_name} vectorized full scan",
     )
-    # Printed PASS/FAIL block around the same _assert_equivalent call this
-    # project has always made before computing any speedup -- see
-    # benchmarks/reporting/validation.py. A failure still raises and aborts
-    # the run exactly as before; only the pass path newly becomes visible.
     assert_equivalent_and_report(
         lambda: _assert_equivalent(
             full_scan_result, pushdown_result, query_name=query_name
@@ -186,7 +143,6 @@ def _benchmark_pair(
 
     full_scan_metrics = _latency_metrics(full_scan_times, full_scan_result)
     pushdown_metrics = _latency_metrics(pushdown_times, pushdown_result)
-    # These fields travel with the pair so all callers export the same controls.
     pushdown_metrics["vectorized_full_scan"] = _latency_metrics(
         samples["vectorized_full_scan"], results["vectorized_full_scan"]
     )
@@ -194,18 +150,18 @@ def _benchmark_pair(
         samples["vectorized_full_scan"], pushdown_times
     )
     pushdown_metrics["acquisition_order"] = acquisition_order
+    pushdown_metrics["requested_trials"] = (
+        NUM_TRIALS if num_trials is None else num_trials
+    )
     pushdown_metrics["timing_method"] = (
-        "interleaved paired rounds; engine permutations rotate; full "
-        "cycles balanced; partial final cycle retained; warm single "
+        "interleaved paired rounds; trials rounded up to whole engine-"
+        "permutation cycles so position/precedence are balanced; gc "
+        "collected then disabled around every timed call; warm single "
         "process"
     )
     pushdown_metrics["chunks_skipped_ratio"] = (
         pushdown_result.pushdown.chunks_skipped_ratio
     )
-    # Exact integer counts already computed on pushdown_result.pushdown --
-    # exposed here (not derived by rounding chunks_skipped_ratio) so callers
-    # needing "chunks scanned"/"chunks pruned" as whole numbers, not just a
-    # percentage, don't have to reconstruct them lossily from the ratio.
     pushdown_metrics["candidate_chunks"] = pushdown_result.pushdown.candidate_count
     pushdown_metrics["total_chunks"] = pushdown_result.pushdown.total_chunks
     return (
@@ -219,18 +175,10 @@ def _benchmark_pair(
 def run_query_benchmarks(
     store: ChunkStore, queries: dict[str, str] | None = None, *, quiet: bool = False
 ) -> dict[str, dict[str, Any]]:
-    """Benchmark a fixed query workload using full-scan and pushdown paths.
+    """Benchmark a fixed workload (default Q1-Q5) on full-scan and pushdown paths.
 
-    Defaults to the Q1-Q5 Dataset A workload; pass ``queries`` to run the
-    same full-scan/pushdown/speedup/equivalence machinery against a
-    different store, such as Dataset B's intraday queries.
-
-    ``quiet=True`` suppresses the correctness PASS-path print for every
-    query in this call (see ``_benchmark_pair``) -- for a caller that will
-    render each query's correctness outcome itself, embedded in a per-query
-    result block, rather than as a standalone line at computation time.
+    ``quiet=True`` suppresses the per-query correctness PASS print.
     """
-
     if not isinstance(store, ChunkStore):
         raise TypeError("store must be a ChunkStore")
     _validate_benchmark_configuration()
@@ -251,8 +199,7 @@ def run_query_benchmarks(
             query_name=query_name,
             quiet=quiet,
         )
-        # Selectivity is measured from the actual pushdown-query result,
-        # never inferred from the query text or its expected workload class.
+        # Measured from the actual result, never inferred from the query text.
         selectivity = (
             pushdown_result.row_count / store.total_rows if store.total_rows else 0.0
         )
@@ -262,7 +209,8 @@ def run_query_benchmarks(
             "pushdown_query": pushdown_metrics,
             "speedup": speedup,
             "selectivity": selectivity,
-            "num_trials": NUM_TRIALS,
+            "num_trials": pushdown_metrics["sample_count"],
+            "requested_trials": NUM_TRIALS,
             "warmup_runs": WARMUP_RUNS,
         }
 
@@ -285,11 +233,7 @@ def _validate_sweep_targets() -> list[float]:
 
 
 def _sweep_query(store: ChunkStore, target: float) -> str:
-    """Construct an approximate trailing-time-range query for one target.
-
-    Time density need not be uniform, so interpolation only proposes a
-    threshold.  The benchmark records the achieved row selectivity afterward.
-    """
+    """Build an approximate trailing-time-range query for one target."""
 
     labels = store.labels
     if not labels:
@@ -305,20 +249,13 @@ def _sweep_query(store: ChunkStore, target: float) -> str:
         threshold = time_start + (time_end - time_start) * (1.0 - target)
 
     if not isinstance(threshold, datetime):
-        # pandas.Timestamp is a datetime subclass, but keep failures from a
-        # custom label type descriptive rather than emitting malformed SQL.
         raise TypeError("chunk label timestamps must be datetime instances")
     literal = threshold.isoformat(sep=" ")
     return f"SELECT * FROM data WHERE timestamp >= '{literal}'"
 
 
 def run_selectivity_sweep(store: ChunkStore, *, quiet: bool = False) -> dict[str, Any]:
-    """Benchmark approximate sweep queries and report achieved selectivity.
-
-    ``quiet=True`` suppresses the correctness PASS-path print for every
-    sweep point, matching ``run_query_benchmarks``'s own ``quiet`` parameter.
-    """
-
+    """Benchmark approximate sweep queries and report achieved selectivity."""
     if not isinstance(store, ChunkStore):
         raise TypeError("store must be a ChunkStore")
     _validate_benchmark_configuration()
@@ -331,8 +268,7 @@ def run_selectivity_sweep(store: ChunkStore, *, quiet: bool = False) -> dict[str
     for target in targets:
         sql = _sweep_query(store, target)
 
-        # This untimed probe is intentional: target values guide query
-        # construction, while charts must use measured result selectivity.
+        # Untimed probe: charts need measured selectivity, not the target.
         probe = pushdown_engine.execute(sql)
         actual_selectivity = (
             probe.row_count / store.total_rows if store.total_rows else 0.0
@@ -359,29 +295,21 @@ def run_selectivity_sweep(store: ChunkStore, *, quiet: bool = False) -> dict[str
                 "full_scan": full_scan_metrics,
                 "pushdown_query": pushdown_metrics,
                 "speedup": speedup,
+                "row_count": timed_result.row_count,
                 "chunks_skipped_ratio": (timed_result.pushdown.chunks_skipped_ratio),
             }
         )
 
     return {
-        # Charts should read this ordered point collection and use
-        # actual_selectivity, not target_selectivity, for their x-axis.
         "points": points,
-        "num_trials": NUM_TRIALS,
+        "num_trials": points[0]["full_scan"]["sample_count"] if points else 0,
+        "requested_trials": NUM_TRIALS,
         "warmup_runs": WARMUP_RUNS,
     }
 
 
 def build_intraday_queries(store: ChunkStore) -> dict[str, str]:
-    """Construct representative queries for Dataset B.
-
-    Dataset B's date range is a trailing window relative to whenever the
-    data was fetched (see data/download_data.py), unlike Dataset A's fixed
-    2023-2024 history -- fixed date literals like Q1-Q5 use would silently
-    stop matching anything once enough time passes. Thresholds here are
-    derived from the store's own labels instead, so the queries stay valid
-    regardless of when the merged CSV was generated.
-    """
+    """Build Dataset B queries from the store's own labels (its window floats)."""
 
     labels = [label for label in store.labels if label.symbol == "AAPL"]
     if not labels:
@@ -416,19 +344,7 @@ def build_intraday_queries(store: ChunkStore) -> dict[str, str]:
 
 
 def run_price_pushdown_demonstration(store: ChunkStore) -> dict[str, Any]:
-    """Isolate the price label's incremental pruning effect.
-
-    A query filtering on symbol='AAPL' AND price>150 AND date>=2024-01-01 was
-    found to add zero incremental pruning beyond its date range: AAPL's
-    actual 2024 close price stayed in [163.36, 257.38] the whole year, so
-    every 2024 chunk trivially satisfies price>150 and price-label pushdown
-    is never really exercised, even though it is present in the SQL text.
-    Checked directly against this store's own AAPL 2024 chunk labels, a
-    threshold of 200 splits AAPL's 12 monthly 2024 chunks into 5 chunks whose
-    max price never reaches 200 (prunable) and 7 that do (candidates) -- a
-    verified, real split of this store's actual data, not an assumed one.
-    """
-
+    """Isolate the price label's incremental pruning effect."""
     pushdown_engine = QueryExecutor(store)
     date_only_sql = "SELECT * FROM data WHERE symbol = 'AAPL' AND date >= '2024-01-01'"
     date_and_price_sql = (
@@ -439,9 +355,24 @@ def run_price_pushdown_demonstration(store: ChunkStore) -> dict[str, Any]:
     date_only_result = pushdown_engine.execute(date_only_sql)
     date_and_price_result = pushdown_engine.execute(date_and_price_sql)
 
+    aapl_2024 = [
+        label
+        for label in store.labels
+        if label.symbol == "AAPL" and label.time_start.year == 2024
+    ]
+    aapl_2024_range = (
+        [
+            min(label.min_price for label in aapl_2024),
+            max(label.max_price for label in aapl_2024),
+        ]
+        if aapl_2024
+        else None
+    )
+
     date_only_candidates = date_only_result.pushdown.candidate_count
     date_and_price_candidates = date_and_price_result.pushdown.candidate_count
     return {
+        "aapl_2024_close_range": aapl_2024_range,
         "date_only": {
             "query": date_only_sql,
             "candidate_chunks": date_only_candidates,

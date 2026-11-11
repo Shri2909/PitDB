@@ -28,8 +28,6 @@ def measure_query_paths(
         num_trials=num_trials,
         warmup=warmup,
     )
-    # Legacy flattened fields remain readable; complete per-engine evidence is
-    # also exported. All means and intervals below refer to raw observations.
     metrics = {
         "full_scan": full,
         "pushdown_query": push,
@@ -37,7 +35,8 @@ def measure_query_paths(
         "vectorized_full_scan_speedup": push["vectorized_full_scan_speedup"],
         "acquisition_order": push["acquisition_order"],
         "timing_method": push["timing_method"],
-        "query_num_trials": num_trials,
+        "query_num_trials": push["sample_count"],
+        "query_requested_trials": num_trials,
         "query_warmup": warmup,
         "query_pushdown_mean_ms": push["mean_latency_seconds"] * 1000,
         "query_pushdown_ci95_low_ms": push["ci95_low_seconds"] * 1000,

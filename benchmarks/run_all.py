@@ -14,9 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
-# ``python benchmarks/run_all.py`` makes benchmarks/ the first import root.
-# Add the repository root so that both that documented invocation and
-# ``python -m benchmarks.run_all`` resolve the same project modules.
+# Lets both ``python benchmarks/run_all.py`` and ``python -m benchmarks.run_all`` work.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -31,8 +29,6 @@ try:
 except ModuleNotFoundError as exc:
     if exc.name != "benchmarks.config":
         raise
-    # The individual benchmark modules have the same staged-build fallback.
-    # Once benchmarks/config.py is added, its values take precedence here.
     benchmark_config = None  # type: ignore[assignment]
 
 from benchmarks.bench_memory import run_memory_benchmarks
@@ -98,10 +94,6 @@ def _hardware_info() -> dict[str, str | int]:
         "release": platform.release(),
         "python_version": platform.python_version(),
         "machine": platform.machine(),
-        # Additive fields -- every key above this line is unchanged from
-        # this function's prior return value; logical/physical core counts
-        # and the git commit are new, already-available provenance, not new
-        # measurements. See BENCHMARK_OUTPUT_AUDIT.md Section 9, item 1.
         "logical_cpu_count": psutil_module.cpu_count(logical=True),
         "physical_cpu_count": psutil_module.cpu_count(logical=False),
         "git_commit": git_commit(),
@@ -109,7 +101,7 @@ def _hardware_info() -> dict[str, str | int]:
 
 
 def _write_json(path: Path, payload: Any) -> None:
-    """Atomically write strict, portable JSON without partial result files."""
+    """Atomically write strict JSON."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
     serialized = json.dumps(
@@ -154,17 +146,7 @@ def _store_summary(store: ChunkStore) -> dict[str, int]:
 
 
 def _load_dataset_quiet(path: Path) -> Any:
-    """Call the unmodified ``load_dataset`` without its own stdout line.
-
-    ``src/replay/data_loader.py:load_dataset`` always prints a
-    ``"Loaded N rows | symbols (...) | date range: ..."`` line -- useful
-    standalone, but this benchmark's exact-format header/Configuration/
-    [SETUP] block (below) already reports row count, symbol count, and date
-    range in its own place, from the same returned DataFrame. Suppressing
-    the duplicate here changes nothing about what ``load_dataset`` does,
-    validates, or returns -- only which of two now-redundant places prints
-    the load confirmation.
-    """
+    """Call ``load_dataset`` with its own stdout line suppressed."""
 
     with contextlib.redirect_stdout(io.StringIO()):
         return load_dataset(path)
@@ -184,16 +166,7 @@ def _query_title(query_name: str) -> str:
 
 
 def _predicate_description(sql: str) -> list[tuple[str, str]]:
-    """Decompose one query's WHERE clause into human-readable fields.
-
-    Walks the same parsed predicate tree (``parse_where_clause``/
-    ``extract_as_of``) the query engine itself executes against this exact
-    SQL string -- not a separate regex or string parse -- so this
-    description can never disagree with what the query actually does. Any
-    clause shape this project's bounded grammar allows but this summarizer
-    doesn't specifically recognize is listed under "Additional predicate(s)"
-    rather than silently dropped, and the raw SQL is always included too.
-    """
+    """Describe a query's WHERE clause from its parsed predicate tree."""
 
     remaining_sql, as_of = extract_as_of(sql)
     predicate = parse_where_clause(remaining_sql)
@@ -272,8 +245,7 @@ def _predicate_description(sql: str) -> list[tuple[str, str]]:
 
 
 def _query_observation(metrics: dict[str, Any]) -> str:
-    """Return a qualitative pruning observation grounded in this query's own
-    measured pruning rate -- not a fixed claim independent of the data."""
+    """Return a qualitative observation based on the measured pruning rate."""
 
     pruning_rate = metrics["pushdown_query"]["chunks_skipped_ratio"]
     if pruning_rate >= 0.9:
@@ -284,25 +256,24 @@ def _query_observation(metrics: dict[str, Any]) -> str:
 
 
 def _print_fixed_query_block(
-    *, index: int, total: int, query_name: str, metrics: dict[str, Any]
+    *,
+    index: int,
+    total: int,
+    query_name: str,
+    metrics: dict[str, Any],
+    store_rows: int | None = None,
 ) -> None:
-    """Print one query's full exact-format result block.
-
-    ``metrics`` is one entry of ``run_query_benchmarks``'s returned dict --
-    already fully computed (including the correctness check, run with
-    ``quiet=True`` by the caller) before this function is ever called.
-    Reaching this function at all is only possible if that correctness
-    check passed: a failure raises ``AssertionError`` from inside
-    ``run_query_benchmarks`` and aborts the run before any query's block --
-    including this one -- is printed. "Overall status: PASSED" below is
-    therefore a truthful restatement of an already-verified outcome, not a
-    second, independent check.
-    """
+    """Print one query's result block (correctness already verified upstream)."""
 
     sql = metrics["query"]
     full_scan = metrics["full_scan"]
     pushdown = metrics["pushdown_query"]
     total_chunks = pushdown["total_chunks"]
+    daily_rows_note = (
+        f"{store_rows:,}-row, {total_chunks:,}-chunk store"
+        if store_rows is not None
+        else f"{total_chunks:,}-chunk store"
+    )
     candidate_chunks = pushdown["candidate_chunks"]
     chunks_pruned = total_chunks - candidate_chunks
 
@@ -350,7 +321,7 @@ def _print_fixed_query_block(
     pushdown_ci_high = pushdown["ci95_high_seconds"] * 1_000.0
     vectorized = pushdown["vectorized_full_scan"]
     box = render_box_table(
-        ["Engine", "Raw mean latency", "Approx. normal interval (raw mean)"],
+        ["Engine", "Raw mean latency", "Student-t interval (raw mean)"],
         [
             [
                 "Row-wise full scan",
@@ -377,6 +348,10 @@ def _print_fixed_query_block(
         console.titled_block(
             "  Speedup",
             [
+                (
+                    "Rows returned / selectivity",
+                    f"{pushdown['row_count']:,} / {format_pct(metrics['selectivity'])}",
+                ),
                 ("Row-wise full scan / pushdown", format_x(metrics["speedup"])),
                 (
                     "Vectorized full scan / pushdown",
@@ -397,7 +372,15 @@ def _print_fixed_query_block(
                     f"{chunks_pruned:,}/{total_chunks:,} chunks were pruned by "
                     "the zone-map index.",
                 ),
-                ("Limitation", "Result applies to this predicate and dataset only."),
+                (
+                    "Limitation",
+                    f"Returns {pushdown['row_count']:,} rows "
+                    f"({format_pct(metrics['selectivity'])} of the table) on a "
+                    f"{daily_rows_note}. Result applies to this predicate and "
+                    "dataset only; ratios on needle queries mostly reflect "
+                    "per-chunk DataFrame construction in the row-wise "
+                    "baseline and do not extrapolate to larger data.",
+                ),
             ],
             indent=4,
         )
@@ -407,13 +390,7 @@ def _print_fixed_query_block(
 
 
 def _sweep_trend_observation(sweep_points: list[dict[str, Any]]) -> str:
-    """Describe the measured selectivity-sweep speedup trend.
-
-    Computed from this run's own sweep points, not asserted in advance --
-    see benchmarks/bench_bitemporal.py's ``_bitemporal_trend_observation``
-    for why a fixed-direction claim independent of the actual data is a
-    real communication risk this suite specifically avoids elsewhere.
-    """
+    """Describe the measured selectivity-sweep speedup trend."""
 
     if not sweep_points:
         return "No selectivity-sweep points were measured."
@@ -448,12 +425,7 @@ def _print_benchmark_1(
     intraday_store: ChunkStore | None,
     intraday_build_seconds: float | None,
 ) -> None:
-    """Print Benchmark 1 in full, start to finish, in the approved format.
-
-    Nothing is printed before this function runs (dataset load/store-build
-    happen silently first -- see ``_load_dataset_quiet`` and ``run_all``),
-    so this header is always the first output the benchmark produces.
-    """
+    """Print Benchmark 1 in the approved exact format."""
 
     symbol_count = int(daily_data["symbol"].nunique())
     row_count = len(daily_data)
@@ -487,7 +459,7 @@ def _print_benchmark_1(
                 ("Timing statistic", "raw arithmetic mean; all samples retained"),
                 (
                     "Uncertainty",
-                    "normal approximation on raw mean; coverage unverified",
+                    "Student-t interval on raw mean; descriptive, coverage unverified",
                 ),
                 ("Random seed", "N/A (real market data, no synthetic generation)"),
             ],
@@ -513,7 +485,11 @@ def _print_benchmark_1(
     total_fixed = len(fixed)
     for index, (query_name, metrics) in enumerate(fixed.items(), start=1):
         _print_fixed_query_block(
-            index=index, total=total_fixed, query_name=query_name, metrics=metrics
+            index=index,
+            total=total_fixed,
+            query_name=query_name,
+            metrics=metrics,
+            store_rows=row_count,
         )
 
     print()
@@ -524,6 +500,7 @@ def _print_benchmark_1(
         [
             format_pct(point["target_selectivity"]),
             format_pct(point["actual_selectivity"]),
+            f"{point['pushdown_query']['row_count']:,}",
             format_pct(point["chunks_skipped_ratio"]),
             format_ms(point["full_scan"]["mean_latency_seconds"] * 1_000.0),
             format_ms(point["pushdown_query"]["mean_latency_seconds"] * 1_000.0),
@@ -536,6 +513,7 @@ def _print_benchmark_1(
             [
                 "Target sel.",
                 "Actual sel.",
+                "Rows",
                 "Pruning rate",
                 "Full scan",
                 "Pushdown",
@@ -556,11 +534,7 @@ def _print_benchmark_1(
         date_and_price_pruned = (
             date_and_price["total_chunks"] - date_and_price["candidate_chunks"]
         )
-        # Speedup: this demonstration only ever ran an untimed pushdown
-        # probe (see run_price_pushdown_demonstration) to isolate the price
-        # clause's incremental chunk pruning -- there is no full-scan timing
-        # comparison for it, so no speedup number exists to report. Marked
-        # N/A rather than reusing an unrelated query's speedup.
+        # The price demonstration is an untimed pushdown probe, so it has no speedup.
         print(
             render_box_table(
                 ["Predicate", "Chunks pruned", "Pruning rate", "Speedup"],
@@ -623,6 +597,7 @@ def _print_benchmark_1(
                 total=total_intraday,
                 query_name=query_name,
                 metrics=metrics,
+                store_rows=intraday_row_count,
             )
 
     speedups = {name: metrics["speedup"] for name, metrics in fixed.items()}
@@ -637,11 +612,21 @@ def _print_benchmark_1(
                 ("Correctness", "PASSED"),
                 (
                     "Narrowest-query speedup",
-                    f"{format_x(speedups[narrowest_name])} ({narrowest_name})",
+                    f"{format_x(speedups[narrowest_name])} ({narrowest_name}, "
+                    f"{fixed[narrowest_name]['pushdown_query']['row_count']:,} rows)",
                 ),
                 (
                     "Broadest-query speedup",
-                    f"{format_x(speedups[broadest_name])} ({broadest_name})",
+                    f"{format_x(speedups[broadest_name])} ({broadest_name}, "
+                    f"{fixed[broadest_name]['pushdown_query']['row_count']:,} rows)",
+                ),
+                (
+                    "Dataset-size caveat",
+                    f"{row_count:,} rows / {chunk_count:,} chunks "
+                    f"({format_bytes(daily_store.total_column_bytes)} of "
+                    "column data): needle-query ratios mostly reflect "
+                    "per-chunk DataFrame construction overhead in the "
+                    "row-wise baseline and do not extrapolate",
                 ),
                 ("Main observation", _sweep_trend_observation(sweep_points)),
                 ("Result artifact", str(queries_path)),
@@ -660,15 +645,7 @@ def _print_benchmark_2(
     fixed_queries: dict[str, Any],
     memory_path: Path,
 ) -> None:
-    """Print Benchmark 2 in full, in the approved format.
-
-    ``fixed_queries`` is Benchmark 1's already-computed, already-validated
-    Q1 result (same store, same query) -- reused here for the correctness
-    block rather than re-running a second, redundant full-scan/pushdown
-    comparison: Q1's correctness was already established once, in
-    Benchmark 1, and reaching this function at all requires that check to
-    have passed (see run_all()).
-    """
+    """Print Benchmark 2 in the approved exact format."""
 
     symbol_count = int(daily_data["symbol"].nunique())
     row_count = len(daily_data)
@@ -679,8 +656,9 @@ def _print_benchmark_2(
     print("Question")
     print(
         console.wrap_text(
-            "How memory-efficient is PitDB's uncompressed columnar storage "
-            "compared with equivalent in-memory representations?"
+            "How much memory do PitDB's uncompressed float64 column storage "
+            "and its per-query working set use, for pruned and unpruned "
+            "execution paths?"
         )
     )
     print()
@@ -695,7 +673,8 @@ def _print_benchmark_2(
                 ("Chunk granularity", "monthly"),
                 (
                     "Query repetitions",
-                    "1 (RSS sampled continuously during a single execution)",
+                    f"{memory['traced_repeats']} per engine, rotating order "
+                    "(tracemalloc peaks)",
                 ),
             ],
         )
@@ -732,14 +711,11 @@ def _print_benchmark_2(
     raw_bytes = memory["raw_numeric_payload_bytes"]
     packed_bytes = memory["column_payload_bytes"]
     raw_bytes_per_row = raw_bytes / row_count if row_count else 0.0
-    packed_bytes_per_row = packed_bytes / row_count if row_count else 0.0
-    packed_over_raw = packed_bytes / raw_bytes if raw_bytes else float("inf")
-    storage_reduction = 1.0 - packed_over_raw
 
     print()
     print(
         console.dash_section(
-            "[STORAGE REPRESENTATION]", " Equal-column float64 payload measurements"
+            "[STORAGE REPRESENTATION]", " Uncompressed float64 payload (no compression)"
         )
     )
     print()
@@ -748,48 +724,28 @@ def _print_benchmark_2(
             ["Representation", "Total memory", "Bytes per row"],
             [
                 [
-                    "Raw numeric columns (float64)",
+                    "Numeric columns in the store (float64 x 5)",
+                    format_bytes(packed_bytes),
+                    f"{packed_bytes / row_count if row_count else 0.0:.1f}",
+                ],
+                [
+                    "Same columns in the source frame (float64 x 5)",
                     format_bytes(raw_bytes),
                     f"{raw_bytes_per_row:.1f}",
                 ],
-                [
-                    "PitDB packed column storage",
-                    format_bytes(packed_bytes),
-                    f"{packed_bytes_per_row:.1f}",
-                ],
             ],
         )
     )
     print()
     print(
-        console.titled_block(
-            "  Packed-storage ratio",
-            [
-                ("PitDB / raw numeric payload", format_x(packed_over_raw)),
-                ("Storage reduction", format_pct(storage_reduction)),
-            ],
-            indent=4,
+        console.wrap_text(
+            "These two rows are equal by construction: PitDB stores raw "
+            "uncompressed float64 columns. No storage reduction or "
+            "compression ratio is measured or claimed.",
+            indent=2,
         )
     )
     print()
-    print(
-        console.titled_block(
-            "  Comparison status",
-            [
-                ("Valid comparison", "YES"),
-                (
-                    "Reason",
-                    (
-                        "Identical numeric columns and float64 dtype; "
-                        "timestamp, symbol, "
-                        "index and metadata excluded from both."
-                    ),
-                ),
-            ],
-            indent=4,
-        )
-    )
-
     print(
         console.field_block(
             [
@@ -844,65 +800,103 @@ def _print_benchmark_2(
         )
     )
 
-    idle_rss = memory["idle_rss_bytes"]
-    construction_peak = memory.get("store_construction_peak_rss_bytes")
-    full_scan_peak = memory["full_scan_q1_peak_rss_bytes"]
-    pushdown_peak = memory["q1_peak_rss_bytes"]
-
+    traced = memory["traced_query_peaks"]
     print()
-    print(console.dash_section("[PEAK PROCESS MEMORY]"))
+    print(
+        console.dash_section(
+            "[PER-QUERY PEAK ALLOCATION]",
+            f" tracemalloc peak above pre-call baseline; median of "
+            f"{memory['traced_repeats']} interleaved repeats",
+        )
+    )
     print()
-    rss_rows = [["Process idle", format_bytes(idle_rss), "—"]]
-    if construction_peak is not None:
-        rss_rows.append(
+    traced_rows = []
+    for name, entry in traced.items():
+        engines = entry["engines"]
+        traced_rows.append(
             [
-                "Store construction",
-                format_bytes(construction_peak),
-                format_bytes(
-                    max(
-                        0,
-                        construction_peak
-                        - memory["store_construction_baseline_rss_bytes"],
-                    )
-                ),
+                name,
+                f"{entry['row_count']:,}",
+                format_bytes(engines["full_scan"]["median_peak_bytes"]),
+                format_bytes(engines["vectorized_full_scan"]["median_peak_bytes"]),
+                format_bytes(engines["pushdown_query"]["median_peak_bytes"]),
             ]
         )
-    rss_rows.append(
-        [
-            "Full-scan query",
-            format_bytes(full_scan_peak),
-            format_bytes(
-                max(0, full_scan_peak - memory["full_scan_q1_baseline_rss_bytes"])
-            ),
-        ]
-    )
-    rss_rows.append(
-        [
-            "Pushdown query",
-            format_bytes(pushdown_peak),
-            format_bytes(max(0, pushdown_peak - memory["q1_baseline_rss_bytes"])),
-        ]
-    )
     print(
         render_box_table(
-            ["Operation", "Peak RSS", "Increase from own baseline"], rss_rows
+            ["Query", "Rows", "Row-wise scan", "Vectorized scan", "Pushdown"],
+            traced_rows,
         )
     )
+    construction = memory.get("store_construction_traced_peak_bytes")
+    if construction is not None:
+        print()
+        print(
+            console.field_block(
+                [
+                    (
+                        "Store construction peak (median of 3)",
+                        format_bytes(construction["median_peak_bytes"]),
+                    )
+                ]
+            )
+        )
+    rss = memory.get("rss_diagnostic")
+    if rss is not None:
+        print()
+        print(
+            console.dash_section(
+                "[RSS DIAGNOSTIC]", " Noise-bounded; not a result or a comparison"
+            )
+        )
+        print(
+            console.field_block(
+                [
+                    (
+                        "Process RSS before measuring",
+                        format_bytes(rss["idle_rss_bytes"]),
+                    ),
+                    (
+                        "Q1 full-scan RSS increase",
+                        format_bytes(rss["full_scan_q1_peak_rss_increase_bytes"]),
+                    ),
+                    (
+                        "Q1 pushdown RSS increase",
+                        format_bytes(rss["q1_peak_rss_increase_bytes"]),
+                    ),
+                    ("Resolution", f"{rss['resolution_bytes']} bytes (page size)"),
+                ]
+            )
+        )
+        print(
+            console.wrap_text(
+                "Single-shot, fixed order, 1 ms sampler, shared ~100 MB "
+                "process: increases at this scale are at the measurement "
+                "noise floor and are not used for any comparison.",
+                indent=2,
+            )
+        )
 
+    q1_traced = traced["Q1"]["engines"]
     print()
     print(console.dash_section("[RESULT]"))
     print(
         console.field_block(
             [
                 ("Correctness", "PASSED"),
-                ("Packed storage", format_bytes(packed_bytes)),
-                ("Raw numeric payload", format_bytes(raw_bytes)),
-                ("Storage reduction", format_pct(storage_reduction)),
+                ("Numeric payload (store, float64)", format_bytes(packed_bytes)),
                 (
                     "Full object footprint",
                     format_bytes(memory["total_object_graph_bytes"]),
                 ),
-                ("Peak query RSS", format_bytes(pushdown_peak)),
+                (
+                    "Q1 peak allocation, row-wise scan",
+                    format_bytes(q1_traced["full_scan"]["median_peak_bytes"]),
+                ),
+                (
+                    "Q1 peak allocation, pushdown",
+                    format_bytes(q1_traced["pushdown_query"]["median_peak_bytes"]),
+                ),
             ]
         )
     )
@@ -913,23 +907,22 @@ def _print_benchmark_2(
             [
                 (
                     "Observation",
-                    f"Packed storage uses {format_pct(storage_reduction)} less "
-                    "numeric-buffer bytes than the same float64 columns.",
+                    "For Q1 (1 matching row) the pushdown executor "
+                    "materialises one chunk where the row-wise scan "
+                    "materialises every chunk, so its traced peak is far "
+                    "lower; the gap shrinks as queries match more chunks "
+                    "(see Q5).",
                 ),
                 (
                     "Valid claim",
-                    (
-                        "This ratio covers numeric buffers only; total retained "
-                        "representations use different accounting."
-                    ),
+                    "Per-query traced allocation peaks on this fixture; "
+                    "storage is uncompressed so no storage saving is claimed.",
                 ),
                 (
                     "Limitation",
-                    (
-                        "Raw full DataFrame pandas accounting and the "
-                        "store object-graph "
-                        "estimate are separate metrics; RSS is process-wide."
-                    ),
+                    "tracemalloc covers Python/NumPy-registered allocations "
+                    "only, in one shared process on a 0.2 MB dataset; the "
+                    "RSS diagnostic is below measurement resolution.",
                 ),
             ],
             indent=4,
@@ -942,17 +935,9 @@ def _print_benchmark_2(
 
 
 def run_all(*, include_memory: bool = False) -> dict[str, Any]:
-    """Run configured benchmarks and persist their structured JSON results.
+    """Run the configured benchmarks and persist their JSON results.
 
-    Dataset A is mandatory. Dataset B is optional only when its merged CSV is
-    absent; a present but invalid intraday file raises instead of silently
-    producing misleading query-benchmark inputs.
-
-    Benchmark 1's dataset load/store-build/query computation all happen
-    silently before its own header is printed (see ``_load_dataset_quiet``
-    and the ``quiet=True`` calls below), so its exact-format Configuration
-    block can show real symbol/row/chunk counts instead of placeholders, and
-    so its header is always the very first line this function prints.
+    Dataset B is skipped only when its CSV is absent; an invalid file raises.
     """
 
     if not isinstance(include_memory, bool):
@@ -971,7 +956,7 @@ def run_all(*, include_memory: bool = False) -> dict[str, Any]:
         parameters={
             "benchmark": "daily_queries_and_memory",
             "include_memory": include_memory,
-            "num_trials": _config_value("NUM_TRIALS", 15),
+            "num_trials": _config_value("NUM_TRIALS", 18),
             "warmup_runs": _config_value("WARMUP_RUNS", 3),
         },
         fixture_paths=[path for path in (daily_path, intraday_path) if path.is_file()],
@@ -981,7 +966,7 @@ def run_all(*, include_memory: bool = False) -> dict[str, Any]:
     hardware["generated_at_utc"] = generated_at
     hardware_path = results_dir / "hardware.json"
 
-    num_trials = _config_value("NUM_TRIALS", 15)
+    num_trials = _config_value("NUM_TRIALS", 18)
     warmup_runs = _config_value("WARMUP_RUNS", 3)
 
     daily_data = _load_dataset_quiet(daily_path)
@@ -1003,10 +988,7 @@ def run_all(*, include_memory: bool = False) -> dict[str, Any]:
             intraday_path,
         )
 
-    # quiet=True: Benchmark 1's per-query correctness outcome is re-rendered
-    # inside its own result block (_print_fixed_query_block) once printing
-    # starts below, instead of live during this still-silent computation
-    # phase -- see benchmarks/reporting/validation.py's `quiet` parameter.
+    # quiet=True: correctness is re-rendered inside each query's result block later.
     fixed_queries = run_query_benchmarks(daily_store, quiet=True)
     queries: dict[str, Any] = {
         "generated_at_utc": generated_at,
@@ -1014,15 +996,12 @@ def run_all(*, include_memory: bool = False) -> dict[str, Any]:
         "source": str(daily_path),
         "store": _store_summary(daily_store),
         "fixed_queries": fixed_queries,
-        # Descriptive interval overlap only; this does not test significance.
         "pairwise_interval_comparisons": annotate_pairwise_significance(fixed_queries),
         "selectivity_sweep": run_selectivity_sweep(daily_store, quiet=True),
         "price_pushdown_demonstration": run_price_pushdown_demonstration(daily_store),
     }
     if intraday_store is not None:
-        # Thresholds are derived from the store's own labels
-        # (build_intraday_queries), since Dataset B's date range is a
-        # trailing window relative to fetch time, not a fixed history.
+        # Dataset B is a trailing window, so thresholds come from the store.
         intraday_queries = build_intraday_queries(intraday_store)
         queries["dataset_b_intraday"] = {
             "store": _store_summary(intraday_store),
@@ -1054,11 +1033,7 @@ def run_all(*, include_memory: bool = False) -> dict[str, Any]:
     memory: dict[str, Any] | None = None
     memory_path = results_dir / "memory.json"
     if include_memory:
-        # Silent, like Benchmark 1: nothing prints before Benchmark 2's own
-        # header. build_store_fn lets run_memory_benchmarks measure "store
-        # construction"'s own peak RSS via a second, redundant build from
-        # the same already-loaded daily_data -- daily_store itself (already
-        # built) is what every other measurement below uses.
+        # build_store_fn is only used to measure store construction's own peak.
         memory = {
             "generated_at_utc": generated_at,
             "dataset": "A_daily",

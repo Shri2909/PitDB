@@ -1,12 +1,4 @@
-"""Synthetic OHLCV data generation for the scale sweep.
-
-Generates data with the same statistical shape as Dataset A (daily OHLCV,
-random-walk-ish prices, lognormal volume) but with a configurable symbol
-count, so chunk count and row count scale together the way adding more
-tracked tickers would in production. Matches the schema load_dataset()
-validates: UTC datetime64[ns] timestamps, string symbols, float64 OHLCV,
-sorted ascending per symbol, unique (timestamp, symbol) pairs.
-"""
+"""Synthetic OHLCV data generation for the scale sweep."""
 
 from __future__ import annotations
 
@@ -21,13 +13,7 @@ def generate_synthetic_ohlcv(
     seed: int = 0,
     start: str = "2023-01-03",
 ) -> pd.DataFrame:
-    """Build a merged, timestamp-and-symbol-sorted synthetic OHLCV DataFrame.
-
-    Each symbol gets its own random walk close price (so price locality
-    matches Dataset A once ChunkBuilder groups the merged rows per symbol),
-    plausible open/high/low derived from that walk, and lognormal volume.
-    """
-
+    """Build a timestamp-and-symbol-sorted synthetic OHLCV DataFrame."""
     if num_symbols < 1:
         raise ValueError("num_symbols must be >= 1")
     if rows_per_symbol < 1:

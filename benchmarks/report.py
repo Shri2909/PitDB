@@ -1,12 +1,4 @@
-"""Shared console-output formatting for the benchmark suite.
-
-Every bench_*.py script used to hand-roll its own print statements
-independently, with no shared column alignment and inconsistent number
-formatting (some scripts round to 2 decimal places, others to 4; some print
-milliseconds, others seconds). This module is the one place table rendering
-and number formatting live, so every script's final summary reads the same
-way.
-"""
+"""Table rendering and number formatting shared by the benchmark scripts."""
 
 from __future__ import annotations
 
@@ -14,13 +6,7 @@ import math
 
 
 def render_table(headers: list[str], rows: list[list[str]]) -> str:
-    """Return an aligned table as a single string, ready to print.
-
-    The first column (treated as the row label -- a query name, a
-    correction rate, a scale point) is left-aligned; every other column is
-    right-aligned, matching how numeric data reads naturally. Column widths
-    are derived from the longest cell -- header or data -- in that column.
-    """
+    """Return an aligned table: first column left-aligned, the rest right-aligned."""
 
     if not headers:
         raise ValueError("headers must not be empty")
@@ -45,16 +31,7 @@ def render_table(headers: list[str], rows: list[list[str]]) -> str:
 
 
 def render_box_table(headers: list[str], rows: list[list[str]]) -> str:
-    """Return a Unicode box-drawing table (``┌─┬─┐`` style) as one string.
-
-    Every column, including the first, is left-aligned within its own
-    one-space padding -- this is a distinct visual convention from
-    :func:`render_table`'s right-aligned data columns, matching the
-    box-table style used in the per-query/per-benchmark result blocks that
-    call this function directly rather than through ``render_table``.
-    Column widths are derived from the longest cell -- header or data -- in
-    that column, exactly like ``render_table``.
-    """
+    """Return a Unicode box-drawing table with every column left-aligned."""
 
     if not headers:
         raise ValueError("headers must not be empty")
@@ -102,14 +79,7 @@ def format_pct(fraction: float) -> str:
 
 
 def format_bytes(num_bytes: float) -> str:
-    """Format a byte count using binary (KiB/MiB/GiB/TiB) units.
-
-    Values under 1024 bytes are shown as a plain integer count (no unit
-    subdivision below whole bytes -- this project never measures fractional
-    bytes). NaN/+-inf pass through Python's own float formatting (``"nan"``,
-    ``"inf"``, ``"-inf"``) rather than raising, matching every other
-    formatter in this module.
-    """
+    """Format a byte count in binary units; non-finite values pass through as text."""
 
     if not math.isfinite(num_bytes):
         return f"{num_bytes}"

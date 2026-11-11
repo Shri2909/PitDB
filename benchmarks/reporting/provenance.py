@@ -39,7 +39,11 @@ def source_snapshot(root: Path = PROJECT_ROOT) -> dict[str, Any]:
             *root.glob("benchmarks/**/*.py"),
             *root.glob("charts/**/*.py"),
             *root.glob("requirements*.txt"),
-            *(path for path in (root / "pyproject.toml",) if path.is_file()),
+            *(
+                path
+                for path in (root / "pyproject.toml", root / "setup.py")
+                if path.is_file()
+            ),
         }
     )
     files = {str(path.relative_to(root)): file_sha256(path) for path in paths}

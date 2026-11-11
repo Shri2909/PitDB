@@ -1,14 +1,4 @@
-"""Tests for the benchmark suite's presentation-only reporting layer.
-
-These tests cover formatting (benchmarks/report.py), structural rendering
-(benchmarks/reporting/console.py), the correctness-gate wrapper
-(benchmarks/reporting/validation.py), and provenance snapshotting
-(benchmarks/reporting/environment.py). None of them exercise benchmark
-computation, timing, or the query engine -- see tests/test_pushdown.py,
-tests/test_executor.py, etc. for that. These tests exist to prove formatting
-changes never touch benchmark semantics: every formatter here takes a
-plain value in and returns a string, nothing else.
-"""
+"""Tests for the benchmark reporting layer."""
 
 from __future__ import annotations
 
@@ -33,9 +23,7 @@ from benchmarks.reporting.validation import (
     speedup_cell,
 )
 
-# ---------------------------------------------------------------------------
 # benchmarks/report.py -- render_table
-# ---------------------------------------------------------------------------
 
 
 class TestRenderTable:
@@ -73,9 +61,7 @@ class TestRenderTable:
             render_table(["A", "B"], [["only one cell"]])
 
 
-# ---------------------------------------------------------------------------
 # benchmarks/report.py -- number formatters
-# ---------------------------------------------------------------------------
 
 
 class TestFormatMs:
@@ -149,9 +135,7 @@ class TestFormatBytes:
         assert format_bytes(float("inf")) == "inf"
 
 
-# ---------------------------------------------------------------------------
 # benchmarks/reporting/console.py
-# ---------------------------------------------------------------------------
 
 
 class TestPhase:
@@ -301,9 +285,7 @@ class TestInterpretation:
         assert "Limitation  : lim" in block
 
 
-# ---------------------------------------------------------------------------
 # benchmarks/reporting/validation.py
-# ---------------------------------------------------------------------------
 
 
 class TestCorrectnessBlock:
@@ -377,9 +359,7 @@ class TestSpeedupCell:
         assert speedup_cell(outcome, 999.0, format_x) == "SUPPRESSED"
 
 
-# ---------------------------------------------------------------------------
 # benchmarks/reporting/environment.py
-# ---------------------------------------------------------------------------
 
 
 class TestEnvironment:

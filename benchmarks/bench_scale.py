@@ -1,19 +1,4 @@
-"""Scale-sweep benchmark using synthetic data at 10x/100x/1000x the size of
-Dataset A.
-
-Dataset A tops out at ~5,000 rows / 240 chunks, so no measurement exists at
-production-representative scale. This module generates synthetic OHLCV data
-with the same shape (random-walk price columns, lognormal volume) at
-increasing symbol counts -- more tracked tickers over the same date range,
-so both row count and chunk count grow together the way they would in a
-real deployment -- and reports how ingestion throughput, pushdown-evaluation
-cost, query latency, and chunks-skipped-ratio behave as scale increases.
-
-The full-scan baseline decompresses every chunk on every call, so its cost
-scales linearly with total chunk count. At the largest scales that makes a
-full NUM_TRIALS run prohibitively slow; trial counts are reduced (and
-reported) at those scales rather than silently skipping the measurement.
-"""
+"""Scale-sweep benchmark on synthetic data at 1x-1000x the size of Dataset A."""
 
 from __future__ import annotations
 
@@ -75,9 +60,7 @@ def run_scale_point(
         )
     )
 
-    # Collect the previous scale point's garbage before measuring this one's
-    # memory footprint, so consecutive points in the same process don't
-    # inflate each other's RSS reading.
+    # Keep the previous point's garbage out of this point's RSS reading.
     gc.collect()
 
     df = generate_synthetic_ohlcv(
@@ -100,8 +83,7 @@ def run_scale_point(
         )
     )
 
-    # Isolate pushdown label-evaluation cost from full query execution
-    # (decompression, filtering). Timed directly, not inferred.
+    # Time label evaluation directly, separate from decompression and filtering.
     narrow_predicate = parse_where_clause(
         f"SELECT * FROM data WHERE symbol = 'SYN{0:06d}'"
     )
@@ -221,7 +203,7 @@ def run_scale_point(
             console.phase(
                 "RESULT",
                 f"{name}: pushdown={format_ms(entry['pushdown_mean_ms'])} "
-                f"approx. normal interval (raw mean)=[{ci_low:.3f},{ci_high:.3f}]ms "
+                f"Student-t interval (raw mean)=[{ci_low:.3f},{ci_high:.3f}]ms "
                 + (
                     f"full_scan={format_ms(entry['full_scan_mean_ms'])} "
                     f"speedup={format_x(entry['speedup'])} "
@@ -247,8 +229,12 @@ def run_scale_point(
         "rss_after_ingest_bytes": rss_after_ingest_bytes,
         "pushdown_eval": pushdown_eval,
         "queries": query_results,
-        "query_num_trials": num_trials,
+        "query_num_trials": next(iter(query_results.values()))["pushdown_query"][
+            "sample_count"
+        ],
+        "query_requested_trials": num_trials,
         "query_warmup": warmup,
+        "protocol": f"{num_trials} trials, {warmup} warm-up rounds",
     }
 
 
@@ -272,33 +258,35 @@ def main() -> int:
         )
     )
 
+    # Trials are multiples of 6 (3! engine orderings) to stay balanced; fewer at
+    # large scale because one row-wise call takes ~100 s at 1000x.
     scale_points = [
         {
             "label": "1x",
             "num_symbols": 10,
-            "num_trials": 15,
+            "num_trials": 18,
             "warmup": 3,
             "run_full_scan": True,
         },
         {
             "label": "10x",
             "num_symbols": 100,
-            "num_trials": 15,
+            "num_trials": 18,
             "warmup": 3,
             "run_full_scan": True,
         },
         {
             "label": "100x",
             "num_symbols": 1000,
-            "num_trials": 10,
+            "num_trials": 12,
             "warmup": 2,
             "run_full_scan": True,
         },
         {
             "label": "1000x",
             "num_symbols": 10000,
-            "num_trials": 3,
-            "warmup": 0,
+            "num_trials": 6,
+            "warmup": 1,
             "run_full_scan": True,
         },
     ]
@@ -307,6 +295,10 @@ def main() -> int:
         parameters={
             "benchmark": "scale_sweep",
             "scale_points": scale_points,
+            "protocols_differ_across_points": len(
+                {(p["num_trials"], p["warmup"]) for p in scale_points}
+            )
+            > 1,
             "rows_per_symbol": ROWS_PER_SYMBOL,
             "synthetic_seed": 1,
         }
@@ -324,6 +316,7 @@ def main() -> int:
         "Narrow speedup",
         "Broad speedup",
         "ns/label",
+        "Trials/warmup",
     ]
     rows = []
     for point in results:
@@ -339,9 +332,23 @@ def main() -> int:
                 format_x(narrow["speedup"]),
                 format_x(broad["speedup"]),
                 f"{point['pushdown_eval']['ns_per_label_broad']:.1f}",
+                f"{point['query_num_trials']}/{point['query_warmup']}",
             ]
         )
     print(render_table(headers, rows))
+    protocols = {(p["query_num_trials"], p["query_warmup"]) for p in results}
+    if len(protocols) > 1:
+        print()
+        print(
+            console.phase(
+                "WARNING",
+                "Scale points were measured under DIFFERENT trial/warm-up "
+                "protocols (last column). Their speedups are not directly "
+                "comparable; interpret the cross-point trend with that "
+                "caveat. Intervals use Student-t critical values, which are "
+                "wide at small n.",
+            )
+        )
 
     first_narrow_speedup = results[0]["queries"]["narrow_symbol_eq"]["speedup"]
     last_narrow_speedup = results[-1]["queries"]["narrow_symbol_eq"]["speedup"]
@@ -364,7 +371,11 @@ def main() -> int:
             limitation=(
                 f"Tested up to {results[-1]['num_symbols']:,} synthetic symbols / "
                 f"{results[-1]['total_rows']:,} rows on one machine; not validated "
-                "beyond this range or under concurrent query load."
+                "beyond this range or under concurrent query load. The largest "
+                f"point used {results[-1]['query_num_trials']} trials and "
+                f"{results[-1]['query_warmup']} warm-up round(s), fewer than the "
+                "smaller points: its interval is wide and its speedup is not "
+                "directly comparable with theirs."
             ),
         )
     )
@@ -372,11 +383,7 @@ def main() -> int:
     results_dir = PROJECT_ROOT / "benchmarks" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)
     output_path = results_dir / "scale_sweep.json"
-    # Wrapped in an object, not a bare array: charts/generate_all.py's loader
-    # requires every *.json file in benchmarks/results/ to parse to a JSON
-    # object. "points" is byte-identical to what this file has always
-    # written; "generated_at_utc"/"git_commit"/"hardware" are new, additive
-    # provenance keys only -- see BENCHMARK_OUTPUT_AUDIT.md Section 9, item 1.
+    # generate_all.py requires every results file to be a JSON object.
     payload = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "git_commit": git_commit(),
