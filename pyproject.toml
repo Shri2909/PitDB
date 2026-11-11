@@ -4,20 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [tool.ruff]
 line-length = 88
+target-version = "py311"
 extend-exclude = ["audit"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["audit", ".venv"]
+norecursedirs = ["audit", ".venv", ".hypothesis", "build", "dist", "*.egg-info"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 
 [tool.ruff.lint.per-file-ignores]
-# These three entrypoint scripts insert the repo root onto sys.path before
-# importing project-local modules, so those imports can't be at the very top
-# of the file. Intentional, not an oversight -- see the comment above each
-# sys.path.insert call.
+# These entrypoint scripts insert the repo root onto sys.path before importing
+# project-local modules, so those imports can't be at the top of the file.
+# Intentional -- see the comment above each sys.path.insert call.
 "benchmarks/bench_bitemporal.py" = ["E402"]
 "benchmarks/bench_chunk_granularity.py" = ["E402"]
 "benchmarks/bench_scale.py" = ["E402"]

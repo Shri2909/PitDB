@@ -1,9 +1,22 @@
+# Reproducible reference environment: exact pins for Python 3.11 and 3.12 (the
+# numpy/pandas/matplotlib pins have no wheels for 3.13+). setup.py declares the
+# same packages as ranges for any Python >=3.11; every pin here must satisfy its
+# range.
+# Core runtime dependencies (also declared by setup.py).
 numpy==1.26.4
 pandas==2.2.1
 sqlglot==23.9.0
+# Optional benchmark and chart dependencies: pip install '.[benchmarks]'.
 matplotlib==3.8.3
-pytest==8.1.1
-hypothesis==6.99.6
 psutil==5.9.8
-yfinance==1.5.1
+pillow==13.0.0
+# Optional test/lint tools: pip install '.[dev]'.
+pytest==9.0.3
+hypothesis==6.99.6
 ruff==0.15.22
+setuptools==79.0.1
+# Optional market-data downloader: pip install '.[download]'.
+yfinance==1.5.1
+certifi==2026.10.23
+soupsieve==2.9
+urllib3==2.8.0
