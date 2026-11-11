@@ -1,0 +1,438 @@
+================================================================================
+ PITDB BENCHMARK 4/5
+ Bitemporal Corrections and Compaction
+================================================================================
+
+Question
+  How do correction volume and compaction affect current-state and historical
+  AS OF query performance?
+
+Configuration
+  Base rows               : 10,020
+  Correction levels       : 5
+  Correction model        : 1-3 versions per corrected key, each learned 1-90 days after the previous
+  Historical AS OF cutoff : sweep of 6 cutoffs per level; primary = 50% of correction versions visible (mid-history, varies by level)
+  Compaction policy       : monthly (same granularity as base store)
+  Warmup runs             : 2
+  Measured runs           : 18
+
+--------------------------------------------------------------------------------
+[CORRECTION LEVEL 1/5]
+--------------------------------------------------------------------------------
+
+Correction workload
+  Correction versions      : 0
+  Corrected keys           : 0
+  Corrected-row percentage : 0.00%
+  Ingestion time           : 0.001 ms
+  Ingestion throughput     : N/A (no corrections at this level)
+
+Storage state before compaction
+  Total chunks      : 480
+  Base chunks       : 480
+  Correction chunks : 0
+
+Correctness validation
+  Current-state query    : PASSED
+  Historical AS OF query : N/A (no corrections exist yet)
+
+Performance matrix
+
+┌──────────────────┬───────────────────┬───────────────┬───────────┬──────────────┬────────────────┐
+│ Query            │ Storage state     │ Row-wise scan │ Pushdown  │ vs. row-wise │ vs. vectorized │
+├──────────────────┼───────────────────┼───────────────┼───────────┼──────────────┼────────────────┤
+│ Current state    │ Before compaction │ 295.177ms     │ 133.225ms │ 2.22x        │ 0.97x          │
+│ Historical AS OF │ Before compaction │ N/A           │ N/A       │ N/A          │ N/A            │
+└──────────────────┴───────────────────┴───────────────┴───────────┴──────────────┴────────────────┘
+
+Pruning before compaction
+
+┌──────────────────┬──────────────┬───────────────┬──────────────┐
+│ Query            │ Total chunks │ Chunks pruned │ Pruning rate │
+├──────────────────┼──────────────┼───────────────┼──────────────┤
+│ Current state    │ 480          │ 0             │ 0.00%        │
+│ Historical AS OF │ N/A          │ N/A           │ N/A          │
+└──────────────────┴──────────────┴───────────────┴──────────────┘
+
+--------------------------------------------------------------------------------
+[COMPACTION]
+--------------------------------------------------------------------------------
+  Input chunks          : 480
+  Output chunks         : 480
+  Chunks merged         : 0
+  Compaction runtime    : 0.050 ms
+  Processing throughput : N/A (nothing to compact)
+  Status                : COMPLETE
+
+Storage state after compaction
+  Total chunks      : 480
+  Base chunks       : 480
+  Correction chunks : 0
+
+Correctness revalidation
+  Current-state query    : PASSED
+  Historical AS OF query : N/A (no corrections exist yet)
+
+Performance matrix
+
+┌──────────────────┬──────────────────┬───────────────┬───────────┬──────────────┬────────────────┐
+│ Query            │ Storage state    │ Row-wise scan │ Pushdown  │ vs. row-wise │ vs. vectorized │
+├──────────────────┼──────────────────┼───────────────┼───────────┼──────────────┼────────────────┤
+│ Current state    │ After compaction │ 294.428ms     │ 133.263ms │ 2.21x        │ 0.98x          │
+│ Historical AS OF │ After compaction │ N/A           │ N/A       │ N/A          │ N/A            │
+└──────────────────┴──────────────────┴───────────────┴───────────┴──────────────┴────────────────┘
+
+--------------------------------------------------------------------------------
+[CORRECTION LEVEL 2/5]
+--------------------------------------------------------------------------------
+
+Correction workload
+  Correction versions      : 162
+  Corrected keys           : 100
+  Corrected-row percentage : 1.00%
+  Ingestion time           : 15.879 ms
+  Ingestion throughput     : 10,202 corrections/second
+
+Storage state before compaction
+  Total chunks      : 642
+  Base chunks       : 480
+  Correction chunks : 162
+
+Correctness validation
+  Current-state query    : PASSED
+  Historical AS OF query : PASSED
+
+Performance matrix
+
+┌──────────────────┬───────────────────┬───────────────┬───────────┬──────────────┬────────────────┐
+│ Query            │ Storage state     │ Row-wise scan │ Pushdown  │ vs. row-wise │ vs. vectorized │
+├──────────────────┼───────────────────┼───────────────┼───────────┼──────────────┼────────────────┤
+│ Current state    │ Before compaction │ 579.833ms     │ 420.557ms │ 1.38x        │ 0.99x          │
+│ Historical AS OF │ Before compaction │ 509.331ms     │ 241.386ms │ 2.11x        │ 1.72x          │
+└──────────────────┴───────────────────┴───────────────┴───────────┴──────────────┴────────────────┘
+
+Pruning before compaction
+
+┌──────────────────┬──────────────┬───────────────┬──────────────┐
+│ Query            │ Total chunks │ Chunks pruned │ Pruning rate │
+├──────────────────┼──────────────┼───────────────┼──────────────┤
+│ Current state    │ 642          │ 0             │ 0.00%        │
+│ Historical AS OF │ 642          │ 280           │ 43.61%       │
+└──────────────────┴──────────────┴───────────────┴──────────────┘
+
+Historical AS OF cutoff sweep (before compaction)
+
+┌───────────────────────────┬──────────────────┬───────────────┬──────────────┬───────────┬───────────┬──────────────┬────────────────┐
+│ Cutoff makes visible      │ Versions visible │ Rows returned │ Pruning rate │ Row-wise  │ Pushdown  │ vs. row-wise │ vs. vectorized │
+├───────────────────────────┼──────────────────┼───────────────┼──────────────┼───────────┼───────────┼──────────────┼────────────────┤
+│ 0% of versions            │ 0 (0.00%)        │ 640           │ 93.77%       │ 423.042ms │ 32.182ms  │ 13.15x       │ 12.83x         │
+│ 25% of versions           │ 41 (25.31%)      │ 3,560         │ 65.58%       │ 472.459ms │ 150.182ms │ 3.15x        │ 2.76x          │
+│ 50% of versions (primary) │ 82 (50.62%)      │ 5,780         │ 43.61%       │ 509.331ms │ 241.386ms │ 2.11x        │ 1.72x          │
+│ 75% of versions           │ 122 (75.31%)     │ 8,280         │ 18.69%       │ 551.532ms │ 344.944ms │ 1.60x        │ 1.21x          │
+│ 100% of versions          │ 162 (100.00%)    │ 10,020        │ 0.00%        │ 580.759ms │ 421.611ms │ 1.38x        │ 0.99x          │
+│ end of base data          │ 141 (87.04%)     │ 10,020        │ 3.27%        │ 581.052ms │ 408.413ms │ 1.42x        │ 1.02x          │
+└───────────────────────────┴──────────────────┴───────────────┴──────────────┴───────────┴───────────┴──────────────┴────────────────┘
+
+--------------------------------------------------------------------------------
+[COMPACTION]
+--------------------------------------------------------------------------------
+  Input chunks          : 642
+  Output chunks         : 572
+  Chunks merged         : 70
+  Compaction runtime    : 11.771 ms
+  Processing throughput : 13,762 rows/second
+  Status                : COMPLETE
+
+Storage state after compaction
+  Total chunks      : 572
+  Base chunks       : 480
+  Correction chunks : 92
+
+Correctness revalidation
+  Current-state query    : PASSED
+  Historical AS OF query : PASSED
+
+Performance matrix
+
+┌──────────────────┬──────────────────┬───────────────┬───────────┬──────────────┬────────────────┐
+│ Query            │ Storage state    │ Row-wise scan │ Pushdown  │ vs. row-wise │ vs. vectorized │
+├──────────────────┼──────────────────┼───────────────┼───────────┼──────────────┼────────────────┤
+│ Current state    │ After compaction │ 537.957ms     │ 378.252ms │ 1.42x        │ 0.99x          │
+│ Historical AS OF │ After compaction │ 465.580ms     │ 220.120ms │ 2.12x        │ 1.69x          │
+└──────────────────┴──────────────────┴───────────────┴───────────┴──────────────┴────────────────┘
+
+--------------------------------------------------------------------------------
+[CORRECTION LEVEL 3/5]
+--------------------------------------------------------------------------------
+
+Correction workload
+  Correction versions      : 758
+  Corrected keys           : 501
+  Corrected-row percentage : 5.00%
+  Ingestion time           : 71.460 ms
+  Ingestion throughput     : 10,607 corrections/second
+
+Storage state before compaction
+  Total chunks      : 1,238
+  Base chunks       : 480
+  Correction chunks : 758
+
+Correctness validation
+  Current-state query    : PASSED
+  Historical AS OF query : PASSED
+
+Performance matrix
+
+┌──────────────────┬───────────────────┬───────────────┬───────────┬──────────────┬────────────────┐
+│ Query            │ Storage state     │ Row-wise scan │ Pushdown  │ vs. row-wise │ vs. vectorized │
+├──────────────────┼───────────────────┼───────────────┼───────────┼──────────────┼────────────────┤
+│ Current state    │ Before compaction │ 957.249ms     │ 801.801ms │ 1.19x        │ 0.99x          │
+│ Historical AS OF │ Before compaction │ 891.405ms     │ 432.415ms │ 2.06x        │ 1.83x          │
+└──────────────────┴───────────────────┴───────────────┴───────────┴──────────────┴────────────────┘
+
+Pruning before compaction
+
+┌──────────────────┬──────────────┬───────────────┬──────────────┐
+│ Query            │ Total chunks │ Chunks pruned │ Pruning rate │
+├──────────────────┼──────────────┼───────────────┼──────────────┤
+│ Current state    │ 1,238        │ 0             │ 0.00%        │
+│ Historical AS OF │ 1,238        │ 579           │ 46.77%       │
+└──────────────────┴──────────────┴───────────────┴──────────────┘
+
+Historical AS OF cutoff sweep (before compaction)
+
+┌───────────────────────────┬──────────────────┬───────────────┬──────────────┬───────────┬───────────┬──────────────┬────────────────┐
+│ Cutoff makes visible      │ Versions visible │ Rows returned │ Pruning rate │ Row-wise  │ Pushdown  │ vs. row-wise │ vs. vectorized │
+├───────────────────────────┼──────────────────┼───────────────┼──────────────┼───────────┼───────────┼──────────────┼────────────────┤
+│ 0% of versions            │ 0 (0.00%)        │ 40            │ 98.38%       │ 788.519ms │ 19.024ms  │ 41.45x       │ 41.43x         │
+│ 25% of versions           │ 190 (25.07%)     │ 3,400         │ 71.73%       │ 845.183ms │ 232.962ms │ 3.63x        │ 3.39x          │
+│ 50% of versions (primary) │ 379 (50.00%)     │ 6,060         │ 46.77%       │ 891.405ms │ 432.415ms │ 2.06x        │ 1.83x          │
+│ 75% of versions           │ 569 (75.07%)     │ 8,480         │ 21.73%       │ 935.629ms │ 632.890ms │ 1.48x        │ 1.26x          │
+│ 100% of versions          │ 758 (100.00%)    │ 10,020        │ 0.00%        │ 963.508ms │ 807.638ms │ 1.19x        │ 0.99x          │
+│ end of base data          │ 697 (91.95%)     │ 10,020        │ 4.93%        │ 957.371ms │ 762.831ms │ 1.26x        │ 1.04x          │
+└───────────────────────────┴──────────────────┴───────────────┴──────────────┴───────────┴───────────┴──────────────┴────────────────┘
+
+--------------------------------------------------------------------------------
+[COMPACTION]
+--------------------------------------------------------------------------------
+  Input chunks          : 1,238
+  Output chunks         : 772
+  Chunks merged         : 466
+  Compaction runtime    : 42.277 ms
+  Processing throughput : 17,930 rows/second
+  Status                : COMPLETE
+
+Storage state after compaction
+  Total chunks      : 772
+  Base chunks       : 480
+  Correction chunks : 292
+
+Correctness revalidation
+  Current-state query    : PASSED
+  Historical AS OF query : PASSED
+
+Performance matrix
+
+┌──────────────────┬──────────────────┬───────────────┬───────────┬──────────────┬────────────────┐
+│ Query            │ Storage state    │ Row-wise scan │ Pushdown  │ vs. row-wise │ vs. vectorized │
+├──────────────────┼──────────────────┼───────────────┼───────────┼──────────────┼────────────────┤
+│ Current state    │ After compaction │ 664.736ms     │ 505.784ms │ 1.31x        │ 0.99x          │
+│ Historical AS OF │ After compaction │ 598.034ms     │ 295.514ms │ 2.02x        │ 1.69x          │
+└──────────────────┴──────────────────┴───────────────┴───────────┴──────────────┴────────────────┘
+
+--------------------------------------------------------------------------------
+[CORRECTION LEVEL 4/5]
+--------------------------------------------------------------------------------
+
+Correction workload
+  Correction versions      : 3,024
+  Corrected keys           : 2,004
+  Corrected-row percentage : 20.00%
+  Ingestion time           : 286.979 ms
+  Ingestion throughput     : 10,537 corrections/second
+
+Storage state before compaction
+  Total chunks      : 3,504
+  Base chunks       : 480
+  Correction chunks : 3,024
+
+Correctness validation
+  Current-state query    : PASSED
+  Historical AS OF query : PASSED
+
+Performance matrix
+
+┌──────────────────┬───────────────────┬───────────────┬────────────┬──────────────┬────────────────┐
+│ Query            │ Storage state     │ Row-wise scan │ Pushdown   │ vs. row-wise │ vs. vectorized │
+├──────────────────┼───────────────────┼───────────────┼────────────┼──────────────┼────────────────┤
+│ Current state    │ Before compaction │ 2387.062ms    │ 2249.274ms │ 1.06x        │ 0.99x          │
+│ Historical AS OF │ Before compaction │ 2318.759ms    │ 1153.446ms │ 2.01x        │ 1.93x          │
+└──────────────────┴───────────────────┴───────────────┴────────────┴──────────────┴────────────────┘
+
+Pruning before compaction
+
+┌──────────────────┬──────────────┬───────────────┬──────────────┐
+│ Query            │ Total chunks │ Chunks pruned │ Pruning rate │
+├──────────────────┼──────────────┼───────────────┼──────────────┤
+│ Current state    │ 3,504        │ 0             │ 0.00%        │
+│ Historical AS OF │ 3,504        │ 1,711         │ 48.83%       │
+└──────────────────┴──────────────┴───────────────┴──────────────┘
+
+Historical AS OF cutoff sweep (before compaction)
+
+┌───────────────────────────┬──────────────────┬───────────────┬──────────────┬────────────┬────────────┬──────────────┬────────────────┐
+│ Cutoff makes visible      │ Versions visible │ Rows returned │ Pruning rate │ Row-wise   │ Pushdown   │ vs. row-wise │ vs. vectorized │
+├───────────────────────────┼──────────────────┼───────────────┼──────────────┼────────────┼────────────┼──────────────┼────────────────┤
+│ 0% of versions            │ 0 (0.00%)        │ 140           │ 99.43%       │ 2219.437ms │ 19.775ms   │ 112.23x      │ 112.17x        │
+│ 25% of versions           │ 762 (25.20%)     │ 3,460         │ 73.69%       │ 2273.733ms │ 596.830ms  │ 3.81x        │ 3.72x          │
+│ 50% of versions (primary) │ 1,513 (50.03%)   │ 6,000         │ 48.83%       │ 2318.759ms │ 1153.446ms │ 2.01x        │ 1.93x          │
+│ 75% of versions           │ 2,270 (75.07%)   │ 8,480         │ 23.80%       │ 2367.083ms │ 1718.316ms │ 1.38x        │ 1.30x          │
+│ 100% of versions          │ 3,024 (100.00%)  │ 10,020        │ 0.00%        │ 2384.975ms │ 2247.509ms │ 1.06x        │ 0.99x          │
+│ end of base data          │ 2,732 (90.34%)   │ 10,020        │ 8.33%        │ 2386.049ms │ 2061.273ms │ 1.16x        │ 1.08x          │
+└───────────────────────────┴──────────────────┴───────────────┴──────────────┴────────────┴────────────┴──────────────┴────────────────┘
+
+--------------------------------------------------------------------------------
+[COMPACTION]
+--------------------------------------------------------------------------------
+  Input chunks          : 3,504
+  Output chunks         : 944
+  Chunks merged         : 2,560
+  Compaction runtime    : 121.710 ms
+  Processing throughput : 24,846 rows/second
+  Status                : COMPLETE
+
+Storage state after compaction
+  Total chunks      : 944
+  Base chunks       : 480
+  Correction chunks : 464
+
+Correctness revalidation
+  Current-state query    : PASSED
+  Historical AS OF query : PASSED
+
+Performance matrix
+
+┌──────────────────┬──────────────────┬───────────────┬───────────┬──────────────┬────────────────┐
+│ Query            │ Storage state    │ Row-wise scan │ Pushdown  │ vs. row-wise │ vs. vectorized │
+├──────────────────┼──────────────────┼───────────────┼───────────┼──────────────┼────────────────┤
+│ Current state    │ After compaction │ 778.004ms     │ 621.330ms │ 1.25x        │ 0.99x          │
+│ Historical AS OF │ After compaction │ 710.443ms     │ 363.967ms │ 1.95x        │ 1.68x          │
+└──────────────────┴──────────────────┴───────────────┴───────────┴──────────────┴────────────────┘
+
+--------------------------------------------------------------------------------
+[CORRECTION LEVEL 5/5]
+--------------------------------------------------------------------------------
+
+Correction workload
+  Correction versions      : 7,553
+  Corrected keys           : 5,010
+  Corrected-row percentage : 50.00%
+  Ingestion time           : 752.154 ms
+  Ingestion throughput     : 10,042 corrections/second
+
+Storage state before compaction
+  Total chunks      : 8,033
+  Base chunks       : 480
+  Correction chunks : 7,553
+
+Correctness validation
+  Current-state query    : PASSED
+  Historical AS OF query : PASSED
+
+Performance matrix
+
+┌──────────────────┬───────────────────┬───────────────┬────────────┬──────────────┬────────────────┐
+│ Query            │ Storage state     │ Row-wise scan │ Pushdown   │ vs. row-wise │ vs. vectorized │
+├──────────────────┼───────────────────┼───────────────┼────────────┼──────────────┼────────────────┤
+│ Current state    │ Before compaction │ 5259.629ms    │ 5157.078ms │ 1.02x        │ 0.99x          │
+│ Historical AS OF │ Before compaction │ 5173.592ms    │ 2608.543ms │ 1.98x        │ 1.95x          │
+└──────────────────┴───────────────────┴───────────────┴────────────┴──────────────┴────────────────┘
+
+Pruning before compaction
+
+┌──────────────────┬──────────────┬───────────────┬──────────────┐
+│ Query            │ Total chunks │ Chunks pruned │ Pruning rate │
+├──────────────────┼──────────────┼───────────────┼──────────────┤
+│ Current state    │ 8,033        │ 0             │ 0.00%        │
+│ Historical AS OF │ 8,033        │ 3,966         │ 49.37%       │
+└──────────────────┴──────────────┴───────────────┴──────────────┘
+
+Historical AS OF cutoff sweep (before compaction)
+
+┌───────────────────────────┬──────────────────┬───────────────┬──────────────┬────────────┬────────────┬──────────────┬────────────────┐
+│ Cutoff makes visible      │ Versions visible │ Rows returned │ Pruning rate │ Row-wise   │ Pushdown   │ vs. row-wise │ vs. vectorized │
+├───────────────────────────┼──────────────────┼───────────────┼──────────────┼────────────┼────────────┼──────────────┼────────────────┤
+│ 0% of versions            │ 0 (0.00%)        │ 80            │ 99.75%       │ 5079.706ms │ 21.336ms   │ 238.09x      │ 238.13x        │
+│ 25% of versions           │ 1,892 (25.05%)   │ 3,380         │ 74.46%       │ 5131.458ms │ 1319.446ms │ 3.89x        │ 3.85x          │
+│ 50% of versions (primary) │ 3,787 (50.14%)   │ 5,880         │ 49.37%       │ 5173.592ms │ 2608.543ms │ 1.98x        │ 1.95x          │
+│ 75% of versions           │ 5,668 (75.04%)   │ 8,400         │ 24.46%       │ 5221.502ms │ 3890.547ms │ 1.34x        │ 1.31x          │
+│ 100% of versions          │ 7,553 (100.00%)  │ 10,020        │ 0.00%        │ 5253.987ms │ 5150.458ms │ 1.02x        │ 0.99x          │
+│ end of base data          │ 6,892 (91.25%)   │ 10,020        │ 8.23%        │ 5262.123ms │ 4735.047ms │ 1.11x        │ 1.08x          │
+└───────────────────────────┴──────────────────┴───────────────┴──────────────┴────────────┴────────────┴──────────────┴────────────────┘
+
+--------------------------------------------------------------------------------
+[COMPACTION]
+--------------------------------------------------------------------------------
+  Input chunks          : 8,033
+  Output chunks         : 951
+  Chunks merged         : 7,082
+  Compaction runtime    : 263.779 ms
+  Processing throughput : 28,634 rows/second
+  Status                : COMPLETE
+
+Storage state after compaction
+  Total chunks      : 951
+  Base chunks       : 480
+  Correction chunks : 471
+
+Correctness revalidation
+  Current-state query    : PASSED
+  Historical AS OF query : PASSED
+
+Performance matrix
+
+┌──────────────────┬──────────────────┬───────────────┬───────────┬──────────────┬────────────────┐
+│ Query            │ Storage state    │ Row-wise scan │ Pushdown  │ vs. row-wise │ vs. vectorized │
+├──────────────────┼──────────────────┼───────────────┼───────────┼──────────────┼────────────────┤
+│ Current state    │ After compaction │ 798.947ms     │ 642.843ms │ 1.24x        │ 0.99x          │
+│ Historical AS OF │ After compaction │ 725.801ms     │ 370.919ms │ 1.96x        │ 1.70x          │
+└──────────────────┴──────────────────┴───────────────┴───────────┴──────────────┴────────────────┘
+
+--------------------------------------------------------------------------------
+[CORRECTION SWEEP SUMMARY]
+--------------------------------------------------------------------------------
+
+┌──────────┬────────────────┬──────────────────────────────────────┬──────────────────────────────────────────────┬────────────────────┐
+│ Versions │ Corrected rows │ Current-state speedup (before/after) │ AS OF speedup, primary cutoff (before/after) │ Compaction runtime │
+├──────────┼────────────────┼──────────────────────────────────────┼──────────────────────────────────────────────┼────────────────────┤
+│ 0        │ 0.00%          │ 2.22x / 2.21x                        │ -- / --                                      │ 0.050 ms           │
+│ 162      │ 1.00%          │ 1.38x / 1.42x                        │ 2.11x / 2.12x                                │ 11.771 ms          │
+│ 758      │ 5.00%          │ 1.19x / 1.31x                        │ 2.06x / 2.02x                                │ 42.277 ms          │
+│ 3,024    │ 20.00%         │ 1.06x / 1.25x                        │ 2.01x / 1.95x                                │ 121.710 ms         │
+│ 7,553    │ 50.00%         │ 1.02x / 1.24x                        │ 1.98x / 1.96x                                │ 263.779 ms         │
+└──────────┴────────────────┴──────────────────────────────────────┴──────────────────────────────────────────────┴────────────────────┘
+
+--------------------------------------------------------------------------------
+[RESULT]
+--------------------------------------------------------------------------------
+  Correctness            : PASSED AT ALL CORRECTION LEVELS
+  Current-state trend    : Pre-compaction speedup fell from 2.22x at 0% corrected to 1.02x at 50% corrected.
+  Historical AS OF trend : At 50% corrected (7,553 versions over 5,010 keys), AS OF speedup vs. the row-wise scan ranged 1.02x (cutoff showing 100% of versions) to 238.09x (cutoff showing 0% of versions) across 6 cutoffs; the primary mid-history cutoff (50% of versions visible) gave 1.98x with 49.37% of chunks pruned.
+  Compaction trend       : Runtime grew from 11.771 ms at 1% corrected to 263.779 ms at 50% corrected.
+  Result artifact        : /home/abc/Desktop/Resume Projects/PitDB/benchmarks/results/bitemporal_sweep.json
+
+  Interpretation
+    Historical AS OF queries can reject correction chunks whose transaction
+    times occur after the requested cutoff. The pruning and speedup actually
+    obtained depend on how many correction versions the cutoff leaves visible
+    (see the AS OF sweep tables and the trend line above); no single AS OF
+    speedup describes every cutoff.
+
+  Limitation
+    Performance conclusions apply only to the tested synthetic correction
+    model (random lags of 1-90 days, up to 3 versions per key, 20 symbols, 501
+    rows each) and compaction policy.
+
+================================================================================
+ BENCHMARK 4 COMPLETE
+================================================================================

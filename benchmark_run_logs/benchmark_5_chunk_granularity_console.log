@@ -1,0 +1,232 @@
+================================================================================
+ PITDB BENCHMARK 5/5
+ Chunk-Granularity Trade-Off
+================================================================================
+
+Question
+  How does chunk granularity affect pruning precision, chunk overhead, and
+  query performance?
+
+Configuration
+  Rows                 : 5,010
+  Symbols              : 10
+  Granularities tested : Weekly, Monthly, Quarterly
+  Queries              : 9: SYN000003, SYN000000, SYN000007 x 3 months, 1 month, 6 months, each with a median-close price band
+  Warmup runs          : 3
+  Measured runs        : 18
+
+--------------------------------------------------------------------------------
+[GRANULARITY 1/3 — WEEKLY]
+--------------------------------------------------------------------------------
+
+Store layout
+  Chunk window           : 7 days
+  Total chunks           : 1,010
+  Average rows per chunk : 5.0
+  Minimum rows per chunk : 1
+  Maximum rows per chunk : 5
+  Metadata size          : 607.41 KiB
+
+Correctness validation
+  Full-scan rows : 11
+  Pushdown rows  : 11
+  Row equality   : PASS
+  Value equality : PASS
+  Dtype equality : PASS
+  Overall status : PASSED
+
+Pruning
+  Chunks scanned : 3
+  Chunks pruned  : 1,007
+  Pruning rate   : 99.70%
+  Rows scanned   : 15
+  Rows returned  : 11
+
+Timing
+  ┌───────────────────┬──────────────┬───────────────────────────────┐
+  │ Engine            │ Mean latency │ Student-t interval (raw mean) │
+  ├───────────────────┼──────────────┼───────────────────────────────┤
+  │ Full scan         │ 299.379ms    │ 299.169 – 299.588 ms          │
+  │ Zone-map pushdown │ 5.030ms      │ 5.000 – 5.059 ms              │
+  └───────────────────┴──────────────┴───────────────────────────────┘
+
+  Row-wise full scan / pushdown   : 59.52x
+  Vectorized full scan / pushdown : 50.47x
+
+Query grid (9 queries: 3 symbols x 3 windows)
+
+┌───────────┬────────────────────┬──────┬────────────────┬───────────┬────────────┬──────────┬─────────────────────┐
+│ Symbol    │ Window             │ Rows │ Chunks scanned │ Row-wise  │ Vectorized │ Pushdown │ Row-wise / pushdown │
+├───────────┼────────────────────┼──────┼────────────────┼───────────┼────────────┼──────────┼─────────────────────┤
+│ SYN000003 │ 3 months (primary) │ 11   │ 3/1,010        │ 299.379ms │ 253.840ms  │ 5.030ms  │ 59.52x              │
+│ SYN000003 │ 1 month            │ 4    │ 1/1,010        │ 298.892ms │ 253.944ms  │ 4.326ms  │ 69.09x              │
+│ SYN000003 │ 6 months           │ 32   │ 7/1,010        │ 299.446ms │ 253.611ms  │ 6.114ms  │ 48.98x              │
+│ SYN000000 │ 3 months           │ 66   │ 14/1,010       │ 298.198ms │ 253.717ms  │ 7.772ms  │ 38.37x              │
+│ SYN000000 │ 1 month            │ 22   │ 5/1,010        │ 298.393ms │ 253.676ms  │ 5.372ms  │ 55.55x              │
+│ SYN000000 │ 6 months           │ 130  │ 27/1,010       │ 298.858ms │ 253.755ms  │ 11.163ms │ 26.77x              │
+│ SYN000007 │ 3 months           │ 66   │ 14/1,010       │ 298.638ms │ 253.909ms  │ 7.801ms  │ 38.28x              │
+│ SYN000007 │ 1 month            │ 22   │ 5/1,010        │ 298.179ms │ 253.685ms  │ 5.442ms  │ 54.80x              │
+│ SYN000007 │ 6 months           │ 130  │ 27/1,010       │ 298.772ms │ 253.913ms  │ 11.207ms │ 26.66x              │
+└───────────┴────────────────────┴──────┴────────────────┴───────────┴────────────┴──────────┴─────────────────────┘
+
+--------------------------------------------------------------------------------
+[GRANULARITY 2/3 — MONTHLY]
+--------------------------------------------------------------------------------
+
+Store layout
+  Chunk window           : 1 calendar month
+  Total chunks           : 240
+  Average rows per chunk : 20.9
+  Minimum rows per chunk : 2
+  Maximum rows per chunk : 23
+  Metadata size          : 144.82 KiB
+
+Correctness validation
+  Full-scan rows : 11
+  Pushdown rows  : 11
+  Row equality   : PASS
+  Value equality : PASS
+  Dtype equality : PASS
+  Overall status : PASSED
+
+Pruning
+  Chunks scanned : 2
+  Chunks pruned  : 238
+  Pruning rate   : 99.17%
+  Rows scanned   : 45
+  Rows returned  : 11
+
+Timing
+  ┌───────────────────┬──────────────┬───────────────────────────────┐
+  │ Engine            │ Mean latency │ Student-t interval (raw mean) │
+  ├───────────────────┼──────────────┼───────────────────────────────┤
+  │ Full scan         │ 113.473ms    │ 113.360 – 113.586 ms          │
+  │ Zone-map pushdown │ 3.638ms      │ 3.623 – 3.652 ms              │
+  └───────────────────┴──────────────┴───────────────────────────────┘
+
+  Row-wise full scan / pushdown   : 31.19x
+  Vectorized full scan / pushdown : 18.62x
+
+Query grid (9 queries: 3 symbols x 3 windows)
+
+┌───────────┬────────────────────┬──────┬────────────────┬───────────┬────────────┬──────────┬─────────────────────┐
+│ Symbol    │ Window             │ Rows │ Chunks scanned │ Row-wise  │ Vectorized │ Pushdown │ Row-wise / pushdown │
+├───────────┼────────────────────┼──────┼────────────────┼───────────┼────────────┼──────────┼─────────────────────┤
+│ SYN000003 │ 3 months (primary) │ 11   │ 2/240          │ 113.473ms │ 67.715ms   │ 3.638ms  │ 31.19x              │
+│ SYN000003 │ 1 month            │ 4    │ 1/240          │ 113.446ms │ 67.776ms   │ 3.208ms  │ 35.37x              │
+│ SYN000003 │ 6 months           │ 32   │ 3/240          │ 113.676ms │ 67.781ms   │ 3.950ms  │ 28.78x              │
+│ SYN000000 │ 3 months           │ 66   │ 3/240          │ 112.297ms │ 67.761ms   │ 3.740ms  │ 30.03x              │
+│ SYN000000 │ 1 month            │ 22   │ 1/240          │ 112.217ms │ 67.750ms   │ 2.983ms  │ 37.62x              │
+│ SYN000000 │ 6 months           │ 130  │ 6/240          │ 112.759ms │ 67.759ms   │ 4.633ms  │ 24.34x              │
+│ SYN000007 │ 3 months           │ 66   │ 3/240          │ 112.243ms │ 67.753ms   │ 3.784ms  │ 29.66x              │
+│ SYN000007 │ 1 month            │ 22   │ 1/240          │ 112.333ms │ 67.805ms   │ 3.018ms  │ 37.22x              │
+│ SYN000007 │ 6 months           │ 130  │ 6/240          │ 112.791ms │ 67.780ms   │ 4.692ms  │ 24.04x              │
+└───────────┴────────────────────┴──────┴────────────────┴───────────┴────────────┴──────────┴─────────────────────┘
+
+--------------------------------------------------------------------------------
+[GRANULARITY 3/3 — QUARTERLY]
+--------------------------------------------------------------------------------
+
+Store layout
+  Chunk window           : 90 days
+  Total chunks           : 80
+  Average rows per chunk : 62.6
+  Minimum rows per chunk : 47
+  Maximum rows per chunk : 65
+  Metadata size          : 48.25 KiB
+
+Correctness validation
+  Full-scan rows : 11
+  Pushdown rows  : 11
+  Row equality   : PASS
+  Value equality : PASS
+  Dtype equality : PASS
+  Overall status : PASSED
+
+Pruning
+  Chunks scanned : 2
+  Chunks pruned  : 78
+  Pruning rate   : 97.50%
+  Rows scanned   : 130
+  Rows returned  : 11
+
+Timing
+  ┌───────────────────┬──────────────┬───────────────────────────────┐
+  │ Engine            │ Mean latency │ Student-t interval (raw mean) │
+  ├───────────────────┼──────────────┼───────────────────────────────┤
+  │ Full scan         │ 74.891ms     │ 74.781 – 75.001 ms            │
+  │ Zone-map pushdown │ 3.480ms      │ 3.464 – 3.497 ms              │
+  └───────────────────┴──────────────┴───────────────────────────────┘
+
+  Row-wise full scan / pushdown   : 21.52x
+  Vectorized full scan / pushdown : 8.34x
+
+Query grid (9 queries: 3 symbols x 3 windows)
+
+┌───────────┬────────────────────┬──────┬────────────────┬──────────┬────────────┬──────────┬─────────────────────┐
+│ Symbol    │ Window             │ Rows │ Chunks scanned │ Row-wise │ Vectorized │ Pushdown │ Row-wise / pushdown │
+├───────────┼────────────────────┼──────┼────────────────┼──────────┼────────────┼──────────┼─────────────────────┤
+│ SYN000003 │ 3 months (primary) │ 11   │ 2/80           │ 74.891ms │ 29.038ms   │ 3.480ms  │ 21.52x              │
+│ SYN000003 │ 1 month            │ 4    │ 1/80           │ 74.919ms │ 29.059ms   │ 3.008ms  │ 24.90x              │
+│ SYN000003 │ 6 months           │ 32   │ 2/80           │ 74.938ms │ 29.042ms   │ 3.491ms  │ 21.46x              │
+│ SYN000000 │ 3 months           │ 66   │ 2/80           │ 73.710ms │ 29.046ms   │ 3.464ms  │ 21.28x              │
+│ SYN000000 │ 1 month            │ 22   │ 1/80           │ 73.717ms │ 29.092ms   │ 2.958ms  │ 24.92x              │
+│ SYN000000 │ 6 months           │ 130  │ 2/80           │ 74.006ms │ 29.131ms   │ 3.350ms  │ 22.09x              │
+│ SYN000007 │ 3 months           │ 66   │ 2/80           │ 73.418ms │ 29.159ms   │ 3.508ms  │ 20.93x              │
+│ SYN000007 │ 1 month            │ 22   │ 1/80           │ 73.630ms │ 29.172ms   │ 3.023ms  │ 24.36x              │
+│ SYN000007 │ 6 months           │ 130  │ 2/80           │ 74.045ms │ 29.089ms   │ 3.358ms  │ 22.05x              │
+└───────────┴────────────────────┴──────┴────────────────┴──────────┴────────────┴──────────┴─────────────────────┘
+
+--------------------------------------------------------------------------------
+[TRADE-OFF SUMMARY]
+--------------------------------------------------------------------------------
+
+Latencies are means across the query grid; pushdown and the row-wise baseline
+are shown separately because their ratio mixes both.
+
+┌─────────────┬────────┬────────────┬─────────────────────┬─────────────────┬─────────────────┬───────────────────┬───────────────────────────────┐
+│ Granularity │ Chunks │ Rows/chunk │ Pruning rate (mean) │ Pushdown (mean) │ Row-wise (mean) │ Vectorized (mean) │ Row-wise / pushdown (geomean) │
+├─────────────┼────────┼────────────┼─────────────────────┼─────────────────┼─────────────────┼───────────────────┼───────────────────────────────┤
+│ Weekly      │ 1,010  │ 5.0        │ 98.87%              │ 7.136ms         │ 298.751ms       │ 253.783ms         │ 44.19x                        │
+│ Monthly     │ 240    │ 20.9       │ 98.80%              │ 3.738ms         │ 112.804ms       │ 67.765ms          │ 30.55x                        │
+│ Quarterly   │ 80     │ 62.6       │ 97.92%              │ 3.293ms         │ 74.141ms        │ 29.092ms          │ 22.56x                        │
+└─────────────┴────────┴────────────┴─────────────────────┴─────────────────┴─────────────────┴───────────────────┴───────────────────────────────┘
+
+Measured findings (data-driven; this run only)
+  Lowest mean pushdown latency : Quarterly
+  Lowest mean row-wise latency : Quarterly
+  Highest mean pruning rate    : Weekly
+  Fewest managed chunks        : Quarterly
+  Highest speedup ratio        : Weekly
+  Configured engine default    : Monthly
+  Default vs measured best     : the configured default (Monthly) did NOT have the lowest mean pushdown latency; Quarterly did (3.293ms vs 3.738ms)
+
+  Reading the speedup column
+    From the coarsest (Quarterly, 80 chunks) to the finest (Weekly, 1,010
+    chunks) granularity, mean row-wise baseline latency goes from 74.141ms to
+    298.751ms and mean pushdown latency from 3.293ms to 7.136ms. The speedup
+    ratio mixes both movements: a baseline that slows with chunk count
+    inflates it without any pushdown improvement, so the ratio alone is not
+    evidence that a granularity is better for pushdown.
+
+  Limitation
+    Synthetic data, 10 symbols x 501 rows, 9 queries (one symbol set, three
+    date windows, a median-close price band) on one machine. This benchmark
+    cannot justify a general default: the best granularity depends on query
+    shape, dataset distribution and write workload, and differences between
+    granularities may be within run-to-run noise. No universal optimum is
+    claimed.
+
+--------------------------------------------------------------------------------
+[RESULT]
+--------------------------------------------------------------------------------
+  Correctness                  : PASSED FOR ALL GRANULARITIES
+  Tested granularities         : 3
+  Lowest mean pushdown latency : Quarterly
+  Configured engine default    : Monthly
+  Default vs measured best     : the configured default (Monthly) did NOT have the lowest mean pushdown latency; Quarterly did (3.293ms vs 3.738ms)
+  Result artifact              : /home/abc/Desktop/Resume Projects/PitDB/benchmarks/results/chunk_granularity_sweep.json
+
+================================================================================
+ BENCHMARK 5 COMPLETE
+================================================================================
