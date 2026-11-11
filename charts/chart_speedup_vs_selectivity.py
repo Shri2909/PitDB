@@ -84,28 +84,40 @@ def _propagated_speedup_std(
     pushdown_mean: float,
     pushdown_std: float,
 ) -> float:
-    """Propagate one-standard-deviation latency errors through both paths.
-
-    This is a descriptive first-order variability approximation, not a
-    confidence interval or significance test. It ignores covariance between
-    the paired observations, which remain available in the result JSON.
-    """
-
+    """First-order propagation of latency SDs (descriptive, ignores covariance)."""
     relative_variance = (full_scan_std / full_scan_mean) ** 2 + (
         pushdown_std / pushdown_mean
     ) ** 2
     return speedup * math.sqrt(relative_variance)
 
 
-# Descriptive propagated variability can exceed a positive speedup. Cap the
-# lower log-scale whisker and disclose the clipping without inferring its cause.
+# Propagated SD can exceed the speedup itself; cap the lower log-axis whisker.
 _MAX_LOWER_ERROR_FRACTION = 0.99
+
+
+def _clip_lower(
+    label: str, selectivity: float, speedup: float, speedup_std: float
+) -> float:
+    if speedup_std > speedup * _MAX_LOWER_ERROR_FRACTION:
+        print(
+            f"Warning: {label} at selectivity={selectivity:g} has a propagated "
+            f"speedup SD ({speedup_std:.3f}) close to or exceeding its own "
+            f"speedup ({speedup:.3f}); clipping the lower whisker (log axis) "
+            "rather than hiding the point."
+        )
+        return speedup * _MAX_LOWER_ERROR_FRACTION
+    return speedup_std
 
 
 def _extract_series(
     payload: Mapping[str, Any],
-) -> tuple[list[float], list[float], list[float], list[float]]:
-    series: list[tuple[float, float, float, float]] = []
+) -> tuple[dict[str, list[tuple[float, float, float, float]]], list[tuple[int, float]]]:
+    """Return ``{series: [(selectivity, speedup, lower, upper)]}`` plus skipped."""
+    series: dict[str, list[tuple[float, float, float, float]]] = {
+        "row_wise": [],
+        "vectorized": [],
+    }
+    skipped: list[tuple[int, float]] = []
 
     for index, raw_point in enumerate(_sweep_points(payload)):
         if not isinstance(raw_point, Mapping):
@@ -114,71 +126,79 @@ def _extract_series(
         selectivity = _require_number(
             raw_point.get("actual_selectivity"),
             f"points[{index}].actual_selectivity",
-            positive=True,
         )
-        if not _MIN_SELECTIVITY <= selectivity <= _MAX_SELECTIVITY:
+        if selectivity > _MAX_SELECTIVITY:
             raise ValueError(
-                f"points[{index}].actual_selectivity must be within "
-                f"[{_MIN_SELECTIVITY}, {_MAX_SELECTIVITY}] for this log chart"
+                f"points[{index}].actual_selectivity must not exceed {_MAX_SELECTIVITY}"
             )
+        if selectivity < _MIN_SELECTIVITY:
+            skipped.append((index, selectivity))
+            continue
 
         speedup = _require_number(
-            raw_point.get("speedup"),
-            f"points[{index}].speedup",
-            positive=True,
+            raw_point.get("speedup"), f"points[{index}].speedup", positive=True
         )
         full_scan_mean, full_scan_std = _latency_stats(raw_point, "full_scan", index)
         pushdown_mean, pushdown_std = _latency_stats(raw_point, "pushdown_query", index)
-
-        calculated_speedup = full_scan_mean / pushdown_mean
         if not math.isclose(
-            speedup,
-            calculated_speedup,
-            rel_tol=1e-9,
-            abs_tol=1e-12,
+            speedup, full_scan_mean / pushdown_mean, rel_tol=1e-9, abs_tol=1e-12
         ):
             raise ValueError(
                 f"points[{index}].speedup is inconsistent with the full-scan "
                 "and pushdown-query means"
             )
-
-        speedup_std = _propagated_speedup_std(
-            speedup,
-            full_scan_mean,
-            full_scan_std,
-            pushdown_mean,
-            pushdown_std,
+        std = _propagated_speedup_std(
+            speedup, full_scan_mean, full_scan_std, pushdown_mean, pushdown_std
         )
-        lower_error = speedup_std
-        max_lower_error = speedup * _MAX_LOWER_ERROR_FRACTION
-        if lower_error >= speedup or lower_error > max_lower_error:
-            print(
-                f"Warning: points[{index}] (selectivity={selectivity:g}) has a "
-                f"propagated speedup std ({speedup_std:.3f}) close to or "
-                f"exceeding its own speedup ({speedup:.3f}) -- one or more "
-                "timing trials for this point have high observed variability. "
-                "Clipping the lower error "
-                "whisker rather than hiding this point; consider re-running "
-                "the benchmark or increasing NUM_TRIALS if this recurs."
+        series["row_wise"].append(
+            (
+                selectivity,
+                speedup,
+                _clip_lower("row-wise", selectivity, speedup, std),
+                std,
             )
-            lower_error = max_lower_error
-        series.append((selectivity, speedup, lower_error, speedup_std))
+        )
 
-    series.sort(key=lambda point: point[0])
-    return (
-        [point[0] for point in series],
-        [point[1] for point in series],
-        [point[2] for point in series],
-        [point[3] for point in series],
-    )
+        pushdown = raw_point["pushdown_query"]
+        vectorized = pushdown.get("vectorized_full_scan")
+        if not isinstance(vectorized, Mapping):
+            raise ValueError(
+                f"points[{index}].pushdown_query.vectorized_full_scan is missing; "
+                "rerun the benchmarks"
+            )
+        vec_mean = _require_number(
+            vectorized.get("mean_latency_seconds"),
+            f"points[{index}] vectorized mean",
+            positive=True,
+        )
+        vec_std = _require_number(
+            vectorized.get("std_latency_seconds"), f"points[{index}] vectorized std"
+        )
+        vec_speedup = vec_mean / pushdown_mean
+        vec_std_speedup = _propagated_speedup_std(
+            vec_speedup, vec_mean, vec_std, pushdown_mean, pushdown_std
+        )
+        series["vectorized"].append(
+            (
+                selectivity,
+                vec_speedup,
+                _clip_lower("vectorized", selectivity, vec_speedup, vec_std_speedup),
+                vec_std_speedup,
+            )
+        )
+
+    if not series["row_wise"]:
+        raise ValueError("no sweep point lies within the plotted selectivity range")
+    for values in series.values():
+        values.sort(key=lambda point: point[0])
+    return series, skipped
 
 
 def generate_chart(
     results: Mapping[str, Any] | str | Path = DEFAULT_RESULTS_PATH,
     output_path: str | Path = DEFAULT_OUTPUT_PATH,
 ) -> Path:
-    """Create and save the publication-ready speedup/selectivity chart."""
-
+    """Create and save the speedup/selectivity chart."""
     if isinstance(results, Mapping):
         payload = results
     elif isinstance(results, (str, Path)):
@@ -186,7 +206,8 @@ def generate_chart(
     else:
         raise TypeError("results must be a mapping or a JSON file path")
 
-    selectivities, speedups, lower_errors, upper_errors = _extract_series(payload)
+    series, skipped = _extract_series(payload)
+    all_points = [*series["row_wise"], *series["vectorized"]]
 
     destination = Path(output_path).expanduser()
     if not destination.is_absolute():
@@ -222,32 +243,48 @@ def generate_chart(
         axis.set_yscale("log")
         axis.set_xlim(_MIN_SELECTIVITY, _MAX_SELECTIVITY)
 
-        lower_bound = min(
-            1.0,
-            *(value - error for value, error in zip(speedups, lower_errors)),
-        )
-        upper_bound = max(
-            1.0,
-            *(value + error for value, error in zip(speedups, upper_errors)),
-        )
-        axis.set_ylim(lower_bound / 1.35, upper_bound * 1.35)
+        lower_bound = min(1.0, *(p[1] - p[2] for p in all_points))
+        upper_bound = max(1.0, *(p[1] + p[3] for p in all_points))
+        axis.set_ylim(lower_bound / 1.9, upper_bound * 1.6)
 
-        axis.errorbar(
-            selectivities,
-            speedups,
-            yerr=[lower_errors, upper_errors],
-            color="#2F6FA3",
-            marker="o",
-            markersize=6.5,
-            markerfacecolor="white",
-            markeredgecolor="#2F6FA3",
-            markeredgewidth=1.5,
-            linewidth=2.0,
-            elinewidth=1.2,
-            capsize=4,
-            capthick=1.2,
-            zorder=4,
-        )
+        styles = {
+            "row_wise": ("#2F6FA3", "o", "Row-wise full scan / pushdown"),
+            "vectorized": (
+                "#E07A2D",
+                "s",
+                "Vectorized full scan (no pruning) / pushdown",
+            ),
+        }
+        for name, (color, marker, label) in styles.items():
+            points = series[name]
+            axis.errorbar(
+                [p[0] for p in points],
+                [p[1] for p in points],
+                yerr=[[p[2] for p in points], [p[3] for p in points]],
+                color=color,
+                marker=marker,
+                markersize=6.5,
+                markerfacecolor="white",
+                markeredgecolor=color,
+                markeredgewidth=1.5,
+                linewidth=2.0,
+                elinewidth=1.2,
+                capsize=4,
+                capthick=1.2,
+                label=label,
+                zorder=4,
+            )
+            for selectivity, speedup, _, _ in points:
+                axis.annotate(
+                    f"{speedup:.1f}x",
+                    xy=(selectivity, speedup),
+                    xytext=(0, 9 if name == "row_wise" else -15),
+                    textcoords="offset points",
+                    ha="center",
+                    fontsize=8.5,
+                    color=color,
+                )
+        axis.legend(loc="lower left", frameon=False, fontsize=9.5)
         axis.axhline(
             1.0,
             color="#666666",
@@ -270,8 +307,18 @@ def generate_chart(
         axis.set_xlabel("Actual selectivity")
         axis.set_ylabel("Speedup factor (x)")
         axis.set_title(
-            "Query Speedup vs. Selectivity (vs. Row-wise Full Scan)",
+            "Query Speedup vs. Selectivity (Row-wise Baseline and Vectorized Control)",
             pad=16,
+        )
+        note = "Error bars: +/-1 SD, first-order propagation of per-engine latency SD."
+        if skipped:
+            note += (
+                f" {len(skipped)} sweep point(s) with selectivity below "
+                f"{_MIN_SELECTIVITY:.1%} not shown "
+                f"({', '.join(f'{sel:.3%}' for _, sel in skipped)})."
+            )
+        figure.text(
+            0.01, -0.02, note, ha="left", va="top", fontsize=8.5, color="#555555"
         )
 
         axis.set_xticks([0.001, 0.01, 0.1, 1.0])
@@ -308,11 +355,12 @@ def generate_chart(
             dpi=300,
             bbox_inches="tight",
             metadata={
-                "Title": ("Query Speedup vs. Selectivity (vs. Row-wise Full Scan)"),
+                "Title": "Query Speedup vs. Selectivity",
                 "Description": (
-                    "Log-log line chart of pushdown-query speedup versus "
-                    "measured selectivity with one-standard-deviation error "
-                    "bars and a no-improvement baseline at 1x."
+                    "Log-log line chart of pushdown speedup versus measured "
+                    "selectivity against both the row-wise full-scan baseline "
+                    "and the vectorized no-pruning control, with +/-1 SD "
+                    "(propagated) error bars and a no-improvement line at 1x."
                 ),
             },
         )

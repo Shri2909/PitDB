@@ -1,11 +1,4 @@
-"""Generate Graph 7: the chunk-granularity tradeoff chart.
-
-Plots chunk count, chunks-skipped-ratio, and query speedup for a fixed
-combined date-range + price-band query across a few ChunkBoundary
-granularities -- the actual measured Pareto curve behind "finer chunks
-prune better but cost more chunk-management overhead," rather than an
-unverified claim.
-"""
+"""Generate Graph 7: the chunk-granularity tradeoff chart."""
 
 from __future__ import annotations
 
@@ -45,8 +38,13 @@ def generate_chart(
     labels = [point["label"] for point in points]
     positions = list(range(len(labels)))
     total_chunks = [point["total_chunks"] for point in points]
-    skipped_ratio = [point["chunks_skipped_ratio"] * 100.0 for point in points]
-    speedup = [point["query_speedup"] for point in points]
+    row_wise_ms = [point["aggregate"]["mean_row_wise_ms"] for point in points]
+    vectorized_ms = [point["aggregate"]["mean_vectorized_ms"] for point in points]
+    pushdown_ms = [point["aggregate"]["mean_pushdown_ms"] for point in points]
+    num_queries = points[0]["aggregate"]["num_queries"]
+    skipped_ratio = [
+        point["aggregate"]["mean_chunks_skipped_ratio"] * 100.0 for point in points
+    ]
 
     destination = Path(output_path).expanduser()
     if not destination.is_absolute():
@@ -88,14 +86,41 @@ def generate_chart(
 
         ax1 = axes[1]
         ax1.bar(labels, skipped_ratio, color=color_skipped)
-        ax1.set_title("Pruning precision vs granularity")
+        ax1.set_title("Pruning precision vs granularity (mean)")
         ax1.set_ylabel("Chunks skipped (%)")
         ax1.grid(axis="y", color="#D7DCE2", linewidth=0.7, zorder=0)
 
         ax2 = axes[2]
-        ax2.plot(positions, speedup, color=color_speedup, marker="o", linewidth=2.0)
-        ax2.set_title("Query speedup vs granularity")
-        ax2.set_ylabel("Speedup (full-scan / pushdown)")
+        ax2.plot(
+            positions,
+            row_wise_ms,
+            color="#8A94A3",
+            marker="^",
+            linewidth=1.8,
+            linestyle="--",
+            label="Row-wise full scan",
+        )
+        ax2.plot(
+            positions,
+            vectorized_ms,
+            color="#E0A83A",
+            marker="D",
+            linewidth=1.8,
+            linestyle=":",
+            label="Vectorized full scan",
+        )
+        ax2.plot(
+            positions,
+            pushdown_ms,
+            color=color_speedup,
+            marker="o",
+            linewidth=2.0,
+            label="Zone-map pushdown",
+        )
+        ax2.set_yscale("log")
+        ax2.set_title(f"Mean latency vs granularity ({num_queries} queries)")
+        ax2.set_ylabel("Latency (ms, log scale)")
+        ax2.legend(fontsize=8.5, frameon=False, loc="upper right")
         ax2.set_xticks(positions, labels)
         ax2.grid(axis="y", color="#D7DCE2", linewidth=0.7, zorder=0)
 
@@ -113,6 +138,19 @@ def generate_chart(
             fontweight="semibold",
         )
 
+        figure.text(
+            0.01,
+            -0.03,
+            "Latency and baseline shown separately: a speedup ratio rises with finer "
+            "chunks partly because the row-wise baseline slows. One synthetic "
+            "dataset and a small query grid cannot justify a general default "
+            "granularity.",
+            ha="left",
+            va="top",
+            fontsize=8.5,
+            color="#555555",
+        )
+
         figure.savefig(
             destination,
             dpi=300,
@@ -120,8 +158,9 @@ def generate_chart(
             metadata={
                 "Title": "Chunk-Granularity Tradeoff",
                 "Description": (
-                    "Chunk count, pruning precision, and query speedup for a "
-                    "combined date-range + price-band query across a few "
+                    "Chunk count, mean pruning precision, and mean row-wise, "
+                    "vectorized and pushdown latency for a grid of combined "
+                    "date-range + price-band queries across a few "
                     "ChunkBoundary granularities."
                 ),
             },

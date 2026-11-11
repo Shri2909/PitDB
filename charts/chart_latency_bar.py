@@ -1,4 +1,4 @@
-"""Generate Graph 2: full-scan and pushdown-query latency for Q1-Q5."""
+"""Generate Graph 2: row-wise, vectorized and pushdown latency for Q1-Q5."""
 
 from __future__ import annotations
 
@@ -50,13 +50,28 @@ def _require_number(value: Any, field: str, *, positive: bool = False) -> float:
     return number
 
 
+_ENGINES = (
+    ("full_scan", "Row-wise full scan (baseline)", "#7B8492"),
+    ("vectorized_full_scan", "Vectorized full scan (no pruning)", "#E0A83A"),
+    ("pushdown_query", "Zone-map pushdown", "#2F6FA3"),
+)
+
+
+def _engine_block(query: Mapping[str, Any], engine_key: str) -> Mapping[str, Any]:
+    if engine_key == "vectorized_full_scan":
+        block = query.get("pushdown_query", {}).get("vectorized_full_scan")
+    else:
+        block = query.get(engine_key)
+    return block if isinstance(block, Mapping) else {}
+
+
 def _latency_stats(
     query: Mapping[str, Any],
     query_name: str,
     engine_key: str,
 ) -> tuple[float, float]:
-    engine = query.get(engine_key)
-    if not isinstance(engine, Mapping):
+    engine = _engine_block(query, engine_key)
+    if not engine:
         raise ValueError(f"{query_name}.{engine_key} must be an object")
     mean = _require_number(
         engine.get("mean_latency_seconds"),
@@ -72,54 +87,38 @@ def _latency_stats(
 
 def _extract_series(
     payload: Mapping[str, Any],
-) -> tuple[list[float], list[float], list[float], list[float]]:
+) -> tuple[dict[str, tuple[list[float], list[float]]], list[int], list[float]]:
+    """Return per-engine (means, stds) in seconds, row counts and speedups."""
     queries = _fixed_queries(payload)
-    full_scan_means: list[float] = []
-    full_scan_stds: list[float] = []
-    pushdown_means: list[float] = []
-    pushdown_stds: list[float] = []
-
+    data: dict[str, tuple[list[float], list[float]]] = {
+        key: ([], []) for key, _, _ in _ENGINES
+    }
+    rows: list[int] = []
+    speedups: list[float] = []
     for query_name in _QUERY_ORDER:
         query = queries.get(query_name)
         if not isinstance(query, Mapping):
             raise ValueError(f"query benchmark results are missing {query_name}")
-        full_scan_mean, full_scan_std = _latency_stats(
-            query,
-            query_name,
-            "full_scan",
-        )
-        pushdown_mean, pushdown_std = _latency_stats(
-            query,
-            query_name,
-            "pushdown_query",
-        )
-        full_scan_means.append(full_scan_mean)
-        full_scan_stds.append(full_scan_std)
-        pushdown_means.append(pushdown_mean)
-        pushdown_stds.append(pushdown_std)
-
-    return full_scan_means, full_scan_stds, pushdown_means, pushdown_stds
+        for key, _, _ in _ENGINES:
+            mean, std = _latency_stats(query, query_name, key)
+            data[key][0].append(mean)
+            data[key][1].append(std)
+        rows.append(int(query["pushdown_query"]["row_count"]))
+        speedups.append(data["full_scan"][0][-1] / data["pushdown_query"][0][-1])
+    return data, rows, speedups
 
 
-def _display_units(
-    full_scan_means: list[float],
-    full_scan_stds: list[float],
-    pushdown_means: list[float],
-    pushdown_stds: list[float],
-) -> tuple[float, str]:
-    """Use milliseconds when every observed mean is below one second."""
-
-    if max((*full_scan_means, *pushdown_means)) < 1.0:
-        return 1_000.0, "Latency (ms)"
-    return 1.0, "Latency (seconds)"
+def _format_latency(milliseconds: float) -> str:
+    if milliseconds >= 1000.0:
+        return f"{milliseconds / 1000.0:.2f} s"
+    return f"{milliseconds:.2f} ms"
 
 
 def generate_chart(
     results: Mapping[str, Any] | str | Path = DEFAULT_RESULTS_PATH,
     output_path: str | Path = DEFAULT_OUTPUT_PATH,
 ) -> Path:
-    """Create and save the publication-ready grouped latency chart."""
-
+    """Create and save the grouped three-engine latency chart (log axis)."""
     if isinstance(results, Mapping):
         payload = results
     elif isinstance(results, (str, Path)):
@@ -127,19 +126,11 @@ def generate_chart(
     else:
         raise TypeError("results must be a mapping or a JSON file path")
 
-    full_scan_means, full_scan_stds, pushdown_means, pushdown_stds = _extract_series(
-        payload
-    )
-    scale, y_label = _display_units(
-        full_scan_means,
-        full_scan_stds,
-        pushdown_means,
-        pushdown_stds,
-    )
-    full_scan_means = [value * scale for value in full_scan_means]
-    full_scan_stds = [value * scale for value in full_scan_stds]
-    pushdown_means = [value * scale for value in pushdown_means]
-    pushdown_stds = [value * scale for value in pushdown_stds]
+    data, rows, speedups = _extract_series(payload)
+    data = {
+        key: ([m * 1000.0 for m in means], [d * 1000.0 for d in stds])
+        for key, (means, stds) in data.items()
+    }
 
     destination = Path(output_path).expanduser()
     if not destination.is_absolute():
@@ -156,7 +147,7 @@ def generate_chart(
         "font.family": "sans-serif",
         "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans"],
         "font.size": 10.5,
-        "axes.titlesize": 15,
+        "axes.titlesize": 14,
         "axes.titleweight": "semibold",
         "axes.labelsize": 11.5,
         "axes.edgecolor": "#444444",
@@ -170,87 +161,91 @@ def generate_chart(
     }
 
     with plt.rc_context(rc):
-        figure, axis = plt.subplots(figsize=(9.0, 5.4), constrained_layout=True)
+        figure, axis = plt.subplots(figsize=(11.0, 6.0), constrained_layout=True)
         positions = list(range(len(_QUERY_ORDER)))
-        bar_width = 0.34
-        full_scan_positions = [position - bar_width / 2.0 for position in positions]
-        pushdown_positions = [position + bar_width / 2.0 for position in positions]
+        bar_width = 0.26
         error_style = {
             "elinewidth": 1.1,
             "ecolor": "#3F444A",
-            "capsize": 3.5,
+            "capsize": 3.0,
             "capthick": 1.1,
         }
+        for offset, (key, label, color) in zip((-1, 0, 1), _ENGINES):
+            means, stds = data[key]
+            # Log axis: clip the lower whisker so it cannot reach zero.
+            lower = [min(std, mean * 0.95) for mean, std in zip(means, stds)]
+            xs = [position + offset * bar_width for position in positions]
+            axis.bar(
+                xs,
+                means,
+                width=bar_width,
+                yerr=[lower, stds],
+                label=label,
+                color=color,
+                edgecolor="white",
+                linewidth=0.8,
+                error_kw=error_style,
+                zorder=3,
+            )
+            for x, mean, std in zip(xs, means, stds):
+                axis.text(
+                    x,
+                    (mean + std) * 1.12,
+                    _format_latency(mean),
+                    ha="center",
+                    va="bottom",
+                    fontsize=7.8,
+                    rotation=90,
+                    color="#222222",
+                )
 
-        axis.bar(
-            full_scan_positions,
-            full_scan_means,
-            width=bar_width,
-            yerr=full_scan_stds,
-            label="Row-wise full scan",
-            color="#7B8492",
-            edgecolor="white",
-            linewidth=0.8,
-            error_kw=error_style,
-            zorder=3,
-        )
-        axis.bar(
-            pushdown_positions,
-            pushdown_means,
-            width=bar_width,
-            yerr=pushdown_stds,
-            label="Pushdown query",
-            color="#2F6FA3",
-            edgecolor="white",
-            linewidth=0.8,
-            error_kw=error_style,
-            zorder=3,
-        )
-
+        axis.set_yscale("log")
         highest = max(
-            *(mean + std for mean, std in zip(full_scan_means, full_scan_stds)),
-            *(mean + std for mean, std in zip(pushdown_means, pushdown_stds)),
+            mean + std for key, _, _ in _ENGINES for mean, std in zip(*data[key])
         )
-        axis.set_ylim(0.0, highest * 1.18)
-        axis.set_xticks(positions, _QUERY_ORDER)
-        axis.set_ylabel(y_label)
-        axis.set_title(
-            "Query Latency: Row-wise Full Scan vs. Pushdown Query (Q1–Q5)",
-            pad=16,
+        lowest = min(mean for key, _, _ in _ENGINES for mean in data[key][0])
+        axis.set_ylim(lowest / 3.0, highest * 8.0)
+        axis.set_xticks(
+            positions,
+            [
+                f"{name}\n{count:,} row{'s' if count != 1 else ''}\n"
+                f"row-wise/pushdown {speedup:.1f}x"
+                for name, count, speedup in zip(_QUERY_ORDER, rows, speedups)
+            ],
         )
-        axis.legend(
-            loc="upper center",
-            bbox_to_anchor=(0.5, 1.0),
-            ncols=2,
-            frameon=False,
-            handlelength=1.5,
-            columnspacing=2.0,
-        )
-        axis.grid(
-            axis="y",
-            color="#D7DCE2",
-            linewidth=0.75,
-            alpha=0.85,
-            zorder=0,
-        )
+        axis.set_ylabel("Mean latency (ms, log scale)")
+        axis.set_title("Query Latency by Engine, Q1-Q5 (mean, +/-1 SD)", pad=14)
+        axis.legend(loc="upper left", ncols=3, frameon=False, fontsize=9.5)
+        axis.grid(axis="y", which="major", color="#D7DCE2", linewidth=0.75, zorder=0)
         axis.set_axisbelow(True)
         axis.spines["top"].set_visible(False)
         axis.spines["right"].set_visible(False)
-        axis.spines["left"].set_color("#555555")
-        axis.spines["bottom"].set_color("#555555")
         axis.tick_params(axis="x", length=0, pad=8)
-        axis.tick_params(axis="y", width=0.8, color="#555555")
+        figure.text(
+            0.01,
+            -0.02,
+            "Error bars: +/-1 sample SD of the trials (lower whisker clipped on the "
+            "log axis); bars start at the axis floor.\n"
+            "Small committed fixture (5,010 rows, 240 chunks): needle-query ratios "
+            "mostly reflect per-chunk DataFrame construction in the row-wise "
+            "baseline and do not extrapolate.",
+            ha="left",
+            va="top",
+            fontsize=8.5,
+            color="#555555",
+        )
 
         figure.savefig(
             destination,
             dpi=300,
             bbox_inches="tight",
             metadata={
-                "Title": "Query Latency: Row-wise Full Scan vs. Pushdown Query (Q1–Q5)",
+                "Title": "Query Latency by Engine, Q1-Q5",
                 "Description": (
-                    "Grouped bar chart comparing full-scan and pushdown-query "
-                    "mean query latency for Q1 through Q5, with one-standard-"
-                    "deviation error bars."
+                    "Grouped bar chart on a log axis comparing the row-wise "
+                    "full-scan baseline, the vectorized no-pruning control and "
+                    "zone-map pushdown mean latency for Q1 through Q5, with "
+                    "+/-1 SD error bars and result row counts."
                 ),
             },
         )

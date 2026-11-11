@@ -1,18 +1,14 @@
-"""
-One-shot download script for the project's two datasets.
+"""Download Dataset A (daily, 2023-2024) and Dataset B (1-minute, trailing 5 days).
 
-Dataset A (daily, 2023-01-01 -> 2024-12-31): drives Q1-Q5 benchmark queries
-    and the P0 charts. Chunked monthly in later phases.
-Dataset B (1-minute, trailing 5 trading days): drives the Dataset B query
-    benchmarks. Chunked hourly in later phases. 1-minute bars are capped by
-    yfinance's free tier to the trailing 7 days, so this window is NOT a
-    fixed date range -- see data/README.md for why the CSVs are committed
-    to the repo instead of relying on re-download.
+Dataset B is not a fixed date range (yfinance caps 1-minute bars); see
+data/README.md.
 """
 
 import argparse
+import os
 import sys
 import time
+from collections.abc import Sequence
 from pathlib import Path
 
 import pandas as pd
@@ -47,22 +43,13 @@ def _manual_download_hint(symbol: str) -> str:
     )
 
 
-def _normalize(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
-    """Flatten yfinance's output into this project's expected schema.
+def _normalize(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten yfinance's output into this project's schema.
 
-    With a single ticker, yfinance's columns are still a (field, ticker)
-    MultiIndex; keeping that shape past this point produces a corrupted CSV
-    (the ticker level gets written as a bogus extra header/data row). Level 0
-    (the field name) is dropped down to a flat Index before anything else.
-
-    Requested with auto_adjust=False, actions=True (see _download_one): the
-    raw frame therefore also carries "Adj Close", "Dividends", and
-    "Stock Splits" columns alongside "Close". "close" is deliberately taken
-    from "Close" (dividend-unadjusted), not "Adj Close" -- this is the whole
-    point of the auto_adjust=False change. "Adj Close"/"Dividends"/
-    "Stock Splits" are dropped rather than added to the merged schema.
+    "close" comes from the dividend-unadjusted "Close"; extra columns are dropped.
     """
     df = df.reset_index()
+    # Single-ticker output still has a (field, ticker) MultiIndex; keep the field level.
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     date_col = "Date" if "Date" in df.columns else "Datetime"
@@ -84,12 +71,7 @@ def _normalize(df: pd.DataFrame, symbol: str) -> pd.DataFrame:
 def _download_one(
     symbol: str, interval: str, start=None, end=None, period=None
 ) -> pd.DataFrame | None:
-    # auto_adjust=False, actions=True: fetch dividend-unadjusted OHLC (plus
-    # Dividends/Stock Splits history, dropped in _normalize) instead of
-    # yfinance's default auto-adjusted-for-dividends prices. Note this does
-    # NOT produce fully "raw as-traded" prices -- Yahoo's OHLC is still
-    # split-adjusted at the source regardless of this flag; auto_adjust=False
-    # only removes the dividend adjustment, not the split adjustment.
+    # auto_adjust=False drops the dividend adjustment; prices stay split-adjusted.
     try:
         if period is not None:
             raw = yf.download(
@@ -120,13 +102,26 @@ def _download_one(
         print(_manual_download_hint(symbol))
         return None
 
-    return _normalize(raw, symbol)
+    return _normalize(raw)
 
 
 def _validate(df: pd.DataFrame, symbol: str, label: str) -> None:
-    assert not df.empty, f"{label}: empty DataFrame for {symbol}"
-    ts = df["timestamp"]
-    assert ts.is_monotonic_increasing, f"{label}: timestamps not sorted for {symbol}"
+    if df.empty:
+        raise ValueError(f"{label}: empty DataFrame for {symbol}")
+    if not df["timestamp"].is_monotonic_increasing:
+        raise ValueError(f"{label}: timestamps not sorted for {symbol}")
+
+
+def _atomic_write_csv(df: pd.DataFrame, path: Path) -> None:
+    """Write ``df`` to ``path`` atomically via a temp file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        df.to_csv(temporary, index=False)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def _download_dataset(
@@ -137,39 +132,56 @@ def _download_dataset(
     end=None,
     period=None,
     force: bool = False,
-) -> None:
+    allow_partial: bool = False,
+) -> bool:
+    """Download every symbol and write the merged CSV; return success.
+
+    Nothing is written unless every symbol downloaded, or ``allow_partial`` is set.
+    """
     if merged_path.exists() and not force:
         existing = pd.read_csv(merged_path)
         print(
             f"[{label}] Data already cached at {merged_path} "
             f"({len(existing)} rows). Skipping. Use --force to re-download."
         )
-        return
+        return True
 
     print(f"\n[{label}] Downloading {len(SYMBOLS)} symbols (interval={interval})...")
     frames = []
+    failed: list[str] = []
     for i, symbol in enumerate(SYMBOLS):
         print(f"  [{i + 1}/{len(SYMBOLS)}] {symbol} ...")
         df = _download_one(symbol, interval, start=start, end=end, period=period)
         if df is None:
+            failed.append(symbol)
             continue
         _validate(df, symbol, label)
         df["symbol"] = symbol
-        per_symbol_path = (
-            CACHE_DIR / f"{symbol}_{'daily' if interval == '1d' else '1m'}.csv"
-        )
-        df.to_csv(per_symbol_path, index=False)
         frames.append(df)
         if i < len(SYMBOLS) - 1:
             time.sleep(2)  # be gentle with yfinance
 
-    if not frames:
-        print(f"[{label}] No data downloaded for any symbol. Aborting merge.")
-        return
+    if failed and not (allow_partial and frames):
+        print(
+            f"\n[{label}] ERROR: no files were written. Failed symbols: "
+            f"{', '.join(failed)}. Fix the download or pass --allow-partial to "
+            "accept a merged file that omits them.",
+            file=sys.stderr,
+        )
+        return False
+    if failed:
+        print(
+            f"\n[{label}] WARNING: --allow-partial; merged file OMITS "
+            f"{', '.join(failed)}.",
+            file=sys.stderr,
+        )
 
+    suffix = "daily" if interval == "1d" else "1m"
+    for frame in frames:
+        _atomic_write_csv(frame, CACHE_DIR / f"{frame['symbol'].iloc[0]}_{suffix}.csv")
     merged = pd.concat(frames, ignore_index=True)
     merged = merged.sort_values(["timestamp", "symbol"]).reset_index(drop=True)
-    merged.to_csv(merged_path, index=False)
+    _atomic_write_csv(merged, merged_path)
 
     print(f"\n[{label}] Summary:")
     for symbol, group in merged.groupby("symbol"):
@@ -187,39 +199,54 @@ def _download_dataset(
         f"  Saved merged file: {merged_path} "
         f"({merged_path.stat().st_size / 1024:.1f} KB)"
     )
+    return True
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Download this project's datasets.")
     parser.add_argument(
         "--force", action="store_true", help="Re-download even if cached files exist."
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--allow-partial",
+        action="store_true",
+        help=(
+            "Write the merged CSV even if some symbols failed to download "
+            "(default: any failed symbol is an error, exit 1, nothing written)."
+        ),
+    )
+    args = parser.parse_args(argv)
 
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    _download_dataset(
+    ok_a = _download_dataset(
         label="Dataset A (daily)",
         merged_path=DATASET_A_MERGED,
         interval="1d",
         start=DATASET_A_START,
         end=DATASET_A_END,
         force=args.force,
+        allow_partial=args.allow_partial,
     )
 
-    _download_dataset(
+    ok_b = _download_dataset(
         label="Dataset B (1-minute)",
         merged_path=DATASET_B_MERGED,
         interval="1m",
         period=DATASET_B_PERIOD,
         force=args.force,
+        allow_partial=args.allow_partial,
     )
 
+    if not (ok_a and ok_b):
+        print("\nDownload INCOMPLETE; see errors above.", file=sys.stderr)
+        return 1
     print(
         "\nDone. Remember to record Dataset B's actual achieved date range "
         "in data/README.md."
     )
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

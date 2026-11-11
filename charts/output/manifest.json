@@ -1,0 +1,30 @@
+{
+  "chart_sha256": {
+    "01_speedup_vs_selectivity.png": "f2594ae76e02277a18ebf3abff655d63b5a49b117e0c6169311cac2f36c32f5c",
+    "02_latency_q1_q5.png": "1d4c2716c8b886bc1d49477536da8643ff793a2f524e7291481eb2071603f1d0",
+    "03_chunks_skipped.png": "321946424058fef6d2cf834a0b942c4eef35b8c37b5dbd2dedc01f2603b4c31c",
+    "04_memory.png": "11ee24695a16026824ec2674a904b8457aae9de78869ef79d061d44af9f972a8",
+    "05_scale_sweep.png": "919ff796e6e824d9387fd95569202c6ffee839e065382406ef7b8683ab271f52",
+    "06_bitemporal_sweep.png": "1ea2753e1fa2b6b556e528e4883eed7670b47b7af6c719326a0116ffc10f808e",
+    "07_chunk_granularity.png": "c6a78fbb5da64a335f0489756cb78e207a2473556fa676afc6d7d81a4e191a59"
+  },
+  "full_suite_charts_complete": true,
+  "input_sha256": {
+    "bitemporal_sweep.json": "8c3897abc550bcb6078298fd743ed6b91f51afda0399389fdb48443b85136b70",
+    "chunk_granularity_sweep.json": "ee11d70592ade04ddc488c848a65559bd7374b282d95a44df5e53bbddb4e48ce",
+    "hardware.json": "76783f880abe4141fc3331e64b98e18095d66a9dfaa55964d807fa623d4a28be",
+    "memory.json": "3774e18478bf58f01a128dfca69432340fbe4565adb640c3bfa63f94f98938e9",
+    "queries.json": "ec238f9e4047a412b54ab44672177a18506ae04792fc2205a881e7a37468bd04",
+    "scale_sweep.json": "87092052a91b1ab5b0bb0f9633f39a4f242b8109514bccd2ea09456242e4a08d"
+  },
+  "missing_result_families": [],
+  "run_id": "3be484a8e3f846b5956a7a9bb1cba282",
+  "selected_charts_complete": true,
+  "selected_result_families": [
+    "bitemporal_sweep",
+    "chunk_granularity_sweep",
+    "memory",
+    "queries",
+    "scale_sweep"
+  ]
+}

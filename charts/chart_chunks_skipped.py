@@ -55,24 +55,28 @@ def _sweep_points(payload: Mapping[str, Any]) -> Sequence[Any]:
 
 def _extract_series(
     payload: Mapping[str, Any],
-) -> tuple[list[float], list[float]]:
+) -> tuple[list[float], list[float], list[float]]:
+    """Return plotted selectivities, ratios and out-of-range selectivities."""
     series: list[tuple[float, float]] = []
+    skipped: list[float] = []
 
     for index, raw_point in enumerate(_sweep_points(payload)):
         if not isinstance(raw_point, Mapping):
             raise ValueError(f"points[{index}] must be an object")
 
-        # Plot achieved row selectivity rather than the nominal sweep target;
-        # real time and price distributions do not guarantee exact target hits.
+        # Achieved selectivity, since real data misses the nominal target.
         selectivity = _require_number(
             raw_point.get("actual_selectivity"),
             f"points[{index}].actual_selectivity",
         )
-        if not _MIN_SELECTIVITY <= selectivity <= _MAX_SELECTIVITY:
+        if selectivity > _MAX_SELECTIVITY or selectivity < 0.0:
             raise ValueError(
-                f"points[{index}].actual_selectivity must be within "
-                f"[{_MIN_SELECTIVITY}, {_MAX_SELECTIVITY}] for this log chart"
+                f"points[{index}].actual_selectivity must be within [0, "
+                f"{_MAX_SELECTIVITY}]"
             )
+        if selectivity < _MIN_SELECTIVITY:
+            skipped.append(selectivity)
+            continue
 
         skipped_ratio = _require_number(
             raw_point.get("chunks_skipped_ratio"),
@@ -84,10 +88,13 @@ def _extract_series(
             )
         series.append((selectivity, skipped_ratio))
 
+    if not series:
+        raise ValueError("no sweep point lies within the plotted selectivity range")
     series.sort(key=lambda point: point[0])
     return (
         [point[0] for point in series],
         [point[1] for point in series],
+        skipped,
     )
 
 
@@ -95,8 +102,7 @@ def generate_chart(
     results: Mapping[str, Any] | str | Path = DEFAULT_RESULTS_PATH,
     output_path: str | Path = DEFAULT_OUTPUT_PATH,
 ) -> Path:
-    """Create and save the publication-ready chunk-skipping chart."""
-
+    """Create and save the chunk-skipping chart."""
     if isinstance(results, Mapping):
         payload = results
     elif isinstance(results, (str, Path)):
@@ -104,7 +110,7 @@ def generate_chart(
     else:
         raise TypeError("results must be a mapping or a JSON file path")
 
-    selectivities, skipped_ratios = _extract_series(payload)
+    selectivities, skipped_ratios, skipped = _extract_series(payload)
 
     destination = Path(output_path).expanduser()
     if not destination.is_absolute():
@@ -153,6 +159,28 @@ def generate_chart(
             zorder=4,
         )
 
+        for selectivity, ratio in zip(selectivities, skipped_ratios):
+            axis.annotate(
+                f"{ratio:.1%}",
+                xy=(selectivity, ratio),
+                xytext=(0, 9),
+                textcoords="offset points",
+                ha="center",
+                fontsize=8.5,
+                color="#2F6FA3",
+            )
+        if skipped:
+            figure.text(
+                0.01,
+                -0.02,
+                f"{len(skipped)} sweep point(s) with selectivity below "
+                f"{_MIN_SELECTIVITY:.1%} not shown "
+                f"({', '.join(f'{value:.3%}' for value in skipped)}).",
+                ha="left",
+                va="top",
+                fontsize=8.5,
+                color="#555555",
+            )
         axis.set_xlabel("Actual selectivity")
         axis.set_ylabel("Chunks-skipped ratio")
         axis.set_title(
@@ -195,9 +223,9 @@ def generate_chart(
                     "Predicate Pushdown Effectiveness: Chunks Skipped vs. Selectivity"
                 ),
                 "Description": (
-                    "Line chart of the fraction of compressed chunks skipped "
-                    "by conservative predicate pushdown at each measured "
-                    "query selectivity."
+                    "Line chart of the fraction of stored (raw float64) chunks "
+                    "skipped by conservative predicate pushdown at each "
+                    "measured query selectivity."
                 ),
             },
         )

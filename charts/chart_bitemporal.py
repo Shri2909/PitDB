@@ -1,20 +1,4 @@
-"""Generate Graph 6: the bitemporal correction-volume sweep chart.
-
-Three panels, all reading benchmarks/results/bitemporal_sweep.json (see
-benchmarks/bench_bitemporal.py, which measures every scenario both before
-and after compact_corrections() so the compaction's real effect is always
-directly visible, never requiring a separate before/after run to see):
-
-1. All chunks skipped by AS OF (post-compaction) -- transaction-time
-   pushdown pruning still works after chunks have been merged.
-2. The "current" (no AS OF) scenario's pushdown latency, pre- vs.
-   post-compaction, against full-scan -- this is the actual proof that
-   compaction helps: fewer, larger chunks mean less decompression/concat
-   overhead for a query that can't prune on transaction time at all.
-3. compact_corrections() itself: wall-clock cost vs. correction volume --
-   this should stay roughly linear (it did not, before the O(n^2) chunk
-   removal bug in ChunkStore._remove_chunk was fixed).
-"""
+"""Generate Graph 6: the bitemporal correction-volume sweep chart."""
 
 from __future__ import annotations
 
@@ -53,15 +37,20 @@ def generate_chart(
     labels = [point["label"] for point in points]
     positions = list(range(len(labels)))
 
-    as_of_positions = [
-        index
-        for index, point in enumerate(points)
-        if "as_of_post_compaction" in point["scenarios"]
-    ]
-    as_of_skipped_ratio = [
-        points[index]["scenarios"]["as_of_post_compaction"]["chunks_skipped_ratio"]
-        for index in as_of_positions
-    ]
+    sweep_series: dict[str, tuple[list[float], list[float]]] = {}
+    for point in points:
+        sweep = point.get("as_of_sweep") or []
+        ordered = sorted(
+            (item for item in sweep if item["target_visible_fraction"] is not None),
+            key=lambda item: item["target_visible_fraction"],
+        )
+        if ordered:
+            sweep_series[point["label"]] = (
+                [item["visible_correction_fraction"] * 100.0 for item in ordered],
+                [item["scenario"]["chunks_skipped_ratio"] * 100.0 for item in ordered],
+            )
+    if not sweep_series:
+        raise ValueError("bitemporal results lack an as_of_sweep; rerun benchmarks")
 
     current_pre_ms = [
         point["scenarios"]["current_pre_compaction"]["query_pushdown_mean_ms"]
@@ -103,7 +92,6 @@ def generate_chart(
         "savefig.facecolor": "white",
     }
 
-    color_skipped = "#4C9F70"
     color_pre = "#B23A48"
     color_post = "#4C9F70"
     color_full_scan = "#8A94A3"
@@ -113,14 +101,22 @@ def generate_chart(
         figure, axes = plt.subplots(1, 3, figsize=(16.5, 4.8), constrained_layout=True)
 
         ax0 = axes[0]
-        ax0.bar(
-            [labels[index] for index in as_of_positions],
-            [ratio * 100.0 for ratio in as_of_skipped_ratio],
-            color=color_skipped,
+        cmap = plt.get_cmap("viridis")
+        for index, (label, (visible, skipped)) in enumerate(sweep_series.items()):
+            ax0.plot(
+                visible,
+                skipped,
+                marker="o",
+                linewidth=1.8,
+                color=cmap(index / max(1, len(sweep_series))),
+                label=f"{label} of rows corrected",
+            )
+        ax0.set_title(
+            "Chunks skipped by AS OF vs. share of\ncorrections visible (pre-compaction)"
         )
-        ax0.set_title("All chunks skipped by AS OF\n(after compaction)")
         ax0.set_ylabel("All store chunks skipped (%)")
-        ax0.set_xlabel("Correction rate")
+        ax0.set_xlabel("Correction versions visible at the cutoff (%)")
+        ax0.legend(fontsize=8.0, frameon=False)
         ax0.grid(axis="y", color="#D7DCE2", linewidth=0.7, zorder=0)
 
         ax1 = axes[1]

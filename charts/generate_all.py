@@ -62,8 +62,7 @@ def _load_all_results(
     if not result_files:
         raise FileNotFoundError(f"no benchmark JSON files were found in {results_dir}")
 
-    # Read every result file up front. This catches stale or malformed optional
-    # results instead of silently generating a partial chart set from bad data.
+    # Load everything up front so stale optional results fail loudly.
     loaded: dict[str, JsonObject] = {}
     for path in result_files:
         if path.stem in loaded:
@@ -150,13 +149,7 @@ def generate_all(
     results_dir: str | Path = DEFAULT_RESULTS_DIR,
     output_dir: str | Path = DEFAULT_OUTPUT_DIR,
 ) -> dict[str, Path]:
-    """Publish charts for one consistent run after every selected chart succeeds.
-
-    Missing optional result families are disclosed in the chart manifest.
-    A malformed selected family aborts the whole export. Prior PNGs are not
-    changed on validation/render failure, and successful partial exports
-    remove known unselected chart filenames so old runs cannot fill gaps.
-    """
+    """Publish charts for one consistent run once every selected chart succeeds."""
     results_path = _resolve_project_path(results_dir)
     output_path = _resolve_project_path(output_dir)
     input_hashes: dict[str, str] = {}

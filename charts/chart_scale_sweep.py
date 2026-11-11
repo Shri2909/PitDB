@@ -1,10 +1,4 @@
-"""Generate Graph 5: dataset-scale sweep of ingestion and query performance.
-
-Plots how ingestion throughput, isolated pushdown-evaluation cost, and
-pushdown-query latency for both the narrow symbol-equality query and the
-broad full-range query behave as synthetic dataset scale increases from 1x
-to 1000x the size of Dataset A.
-"""
+"""Generate Graph 5: dataset-scale sweep of ingestion and query performance."""
 
 from __future__ import annotations
 
@@ -53,6 +47,20 @@ def generate_chart(
         point["queries"]["broad_full_range"].get("full_scan_mean_ms")
         for point in points
     ]
+
+    broad = [point["queries"]["broad_full_range"] for point in points]
+    broad_vectorized_ms = [
+        entry["vectorized_full_scan"]["mean_latency_seconds"] * 1000.0
+        for entry in broad
+    ]
+    protocol_labels = [
+        f"{point['label']}\nn={point.get('query_num_trials', '?')}, "
+        f"warm-up {point.get('query_warmup', '?')}"
+        for point in points
+    ]
+    protocols = {
+        (point.get("query_num_trials"), point.get("query_warmup")) for point in points
+    }
 
     destination = Path(output_path).expanduser()
     if not destination.is_absolute():
@@ -138,6 +146,15 @@ def generate_chart(
                 linestyle="--",
                 label="Row-wise full scan, broad filter",
             )
+        ax2.plot(
+            positions,
+            broad_vectorized_ms,
+            color="#E0A83A",
+            marker="D",
+            linewidth=1.6,
+            linestyle=":",
+            label="Vectorized full scan (no pruning), broad filter",
+        )
         ax2.set_yscale("log")
         ax2.set_title("Query latency vs scale (log scale)")
         ax2.set_ylabel("Latency (ms)")
@@ -146,7 +163,8 @@ def generate_chart(
         ax2.legend(fontsize=8.5, frameon=False, loc="upper left")
 
         for axis in axes:
-            axis.set_xlabel("Scale (symbol count multiplier)")
+            axis.set_xticks(positions, protocol_labels, fontsize=9)
+            axis.set_xlabel("Scale (symbol count multiplier; trials, warm-up)")
             axis.spines["top"].set_visible(False)
             axis.spines["right"].set_visible(False)
             axis.set_axisbelow(True)
@@ -156,6 +174,20 @@ def generate_chart(
             fontsize=14.5,
             fontweight="semibold",
         )
+
+        if len(protocols) > 1:
+            figure.text(
+                0.01,
+                -0.04,
+                "Scale points used DIFFERENT trial/warm-up protocols (see x labels); "
+                "the largest point has the fewest trials and widest uncertainty, so "
+                "cross-point speedup comparisons need that caveat. Means only; "
+                "per-point Student-t intervals are in scale_sweep.json.",
+                ha="left",
+                va="top",
+                fontsize=8.5,
+                color="#555555",
+            )
 
         figure.savefig(
             destination,

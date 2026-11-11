@@ -14,14 +14,19 @@ DEFAULT_RESULTS_PATH = PROJECT_ROOT / "benchmarks/results/memory.json"
 DEFAULT_OUTPUT_PATH = PROJECT_ROOT / "charts/output/04_memory.png"
 
 _BYTES_PER_MEGABYTE = 1_000_000.0
-# Equal-column numeric buffers are comparable. Full retained representations
-# and process RSS use different accounting and are displayed independently.
-_METRICS = (
-    ("raw_numeric_payload_bytes", "Raw numeric payload\n(float64, OHLCV)"),
-    ("column_payload_bytes", "Store numeric payload\n(float64, OHLCV)"),
-    ("raw_uncompressed_bytes", "Full DataFrame\n(pandas, deep)"),
-    ("chunk_store_bytes", "Full store\n(object graph estimate)"),
-    ("q1_peak_rss_bytes", "Q1 process RSS peak\n(shared process)"),
+# Raw and store payloads are equal by construction, so they share one bar.
+_RETAINED = (
+    (
+        "column_payload_bytes",
+        "Numeric payload\n(float64 x5; source ==\nstore, uncompressed)",
+    ),
+    ("raw_uncompressed_bytes", "Full source DataFrame\n(pandas, deep)"),
+    ("chunk_store_bytes", "Full store\n(object-graph estimate)"),
+)
+_ENGINES = (
+    ("full_scan", "Row-wise full scan", "#7B8492"),
+    ("vectorized_full_scan", "Vectorized (no pruning)", "#E0A83A"),
+    ("pushdown_query", "Zone-map pushdown", "#2F6FA3"),
 )
 
 
@@ -41,7 +46,6 @@ def _load_json(path: Path) -> Mapping[str, Any]:
 
 def _memory_metrics(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     """Accept memory.json directly or the object returned by run_all()."""
-
     if "memory" in payload:
         memory = payload["memory"]
         if memory is None:
@@ -66,28 +70,24 @@ def _require_bytes(value: Any, field: str) -> int:
 
 def _extract_values(
     payload: Mapping[str, Any],
-) -> tuple[list[str], list[float]]:
+) -> tuple[list[str], list[float], Mapping[str, Any]]:
     metrics = _memory_metrics(payload)
     labels: list[str] = []
     values_mb: list[float] = []
-
-    for field, label in _METRICS:
+    for field, label in _RETAINED:
         if field not in metrics:
             raise ValueError(f"memory benchmark results are missing {field}")
-        value_bytes = _require_bytes(metrics[field], field)
         labels.append(label)
-        values_mb.append(value_bytes / _BYTES_PER_MEGABYTE)
-
-    baseline = metrics.get("q1_baseline_rss_bytes")
-    if baseline is not None:
-        baseline_bytes = _require_bytes(baseline, "q1_baseline_rss_bytes")
-        peak_bytes = _require_bytes(metrics["q1_peak_rss_bytes"], "q1_peak_rss_bytes")
-        if peak_bytes < baseline_bytes:
-            raise ValueError("q1_peak_rss_bytes cannot be below its RSS baseline")
-
+        values_mb.append(_require_bytes(metrics[field], field) / _BYTES_PER_MEGABYTE)
     if max(values_mb, default=0.0) <= 0.0:
         raise ValueError("at least one measured memory value must be positive")
-    return labels, values_mb
+    traced = metrics.get("traced_query_peaks")
+    if not isinstance(traced, Mapping) or not traced:
+        raise ValueError(
+            "memory results lack traced_query_peaks; rerun benchmarks/run_all.py "
+            "--memory with the current code"
+        )
+    return labels, values_mb, traced
 
 
 def _value_label(value_mb: float) -> str:
@@ -98,12 +98,17 @@ def _value_label(value_mb: float) -> str:
     return f"{value_mb:,.2f} MB"
 
 
+def _kb_label(value_bytes: float) -> str:
+    if value_bytes >= 1_000_000:
+        return f"{value_bytes / 1e6:.2f} MB"
+    return f"{value_bytes / 1e3:.0f} kB"
+
+
 def generate_chart(
     results: Mapping[str, Any] | str | Path = DEFAULT_RESULTS_PATH,
     output_path: str | Path = DEFAULT_OUTPUT_PATH,
 ) -> Path:
-    """Create and save the raw/store/query memory comparison."""
-
+    """Create the retained-size and per-query peak-allocation panels."""
     if isinstance(results, Mapping):
         payload = results
     elif isinstance(results, (str, Path)):
@@ -111,7 +116,7 @@ def generate_chart(
     else:
         raise TypeError("results must be a mapping or a JSON file path")
 
-    labels, values = _extract_values(payload)
+    labels, values, traced = _extract_values(payload)
 
     destination = Path(output_path).expanduser()
     if not destination.is_absolute():
@@ -128,94 +133,156 @@ def generate_chart(
         "font.family": "sans-serif",
         "font.sans-serif": ["DejaVu Sans", "Arial", "Liberation Sans"],
         "font.size": 10.5,
-        "axes.titlesize": 15,
+        "axes.titlesize": 12.5,
         "axes.titleweight": "semibold",
-        "axes.labelsize": 11.5,
+        "axes.labelsize": 11,
         "axes.edgecolor": "#444444",
         "axes.linewidth": 0.8,
-        "xtick.labelsize": 10.5,
-        "ytick.labelsize": 10,
         "figure.facecolor": "white",
         "axes.facecolor": "white",
         "savefig.facecolor": "white",
     }
-    colors = ["#7B8492", "#3F9142", "#8699A7", "#2F6FA3", "#E07A2D"]
 
     with plt.rc_context(rc):
-        figure, axis = plt.subplots(figsize=(9.0, 5.4), constrained_layout=True)
+        figure, (left, right) = plt.subplots(
+            1,
+            2,
+            figsize=(15.0, 5.8),
+            gridspec_kw={"width_ratios": [1, 1.6]},
+            constrained_layout=True,
+        )
+
         positions = list(range(len(values)))
-        bars = axis.bar(
+        bars = left.bar(
             positions,
             values,
             width=0.58,
-            color=colors,
+            color=["#3F9142", "#8699A7", "#2F6FA3"],
             edgecolor="white",
-            linewidth=0.8,
             zorder=3,
         )
-
-        maximum = max(values)
-        headroom = max(1.0, maximum * 0.18)
-        axis.set_ylim(0.0, maximum + headroom)
-        axis.set_xticks(positions, labels)
-        axis.set_ylabel("Memory (MB)")
-        axis.set_title(
-            "Numeric Payloads, Retained Representations, and Process RSS",
-            pad=16,
-        )
-        axis.grid(
-            axis="y",
-            color="#D7DCE2",
-            linewidth=0.7,
-            alpha=0.8,
-            zorder=0,
-        )
-        axis.set_axisbelow(True)
-        axis.spines["top"].set_visible(False)
-        axis.spines["right"].set_visible(False)
-        axis.spines["left"].set_color("#555555")
-        axis.spines["bottom"].set_color("#555555")
-        axis.tick_params(axis="x", length=0, pad=8)
-        axis.tick_params(axis="y", width=0.8, color="#555555")
-
-        label_offset = max(0.25, maximum * 0.02)
-        if len(bars) != len(values):
-            raise ValueError("rendered bars must match the measured memory values")
+        left.set_ylim(0.0, max(values) * 1.18)
+        left.set_xticks(positions, labels, fontsize=9)
+        left.set_ylabel("Retained size (MB)")
+        left.set_title("Retained representations (different accounting methods)")
         for bar, value in zip(bars, values):
-            axis.text(
+            left.text(
                 bar.get_x() + bar.get_width() / 2.0,
-                value + label_offset,
+                value + max(values) * 0.02,
                 _value_label(value),
                 ha="center",
                 va="bottom",
                 fontsize=10,
                 fontweight="semibold",
-                color="#222222",
-                clip_on=False,
             )
+
+        names = list(traced)
+        group = list(range(len(names)))
+        width = 0.26
+        for offset, (key, label, color) in zip((-1, 0, 1), _ENGINES):
+            medians, lows, highs = [], [], []
+            for name in names:
+                engine = traced[name]["engines"][key]
+                median = float(engine["median_peak_bytes"])
+                medians.append(median)
+                lows.append(max(0.0, median - float(engine["min_peak_bytes"])))
+                highs.append(max(0.0, float(engine["max_peak_bytes"]) - median))
+            xs = [g + offset * width for g in group]
+            right.bar(
+                xs,
+                medians,
+                width=width,
+                yerr=[lows, highs],
+                label=label,
+                color=color,
+                edgecolor="white",
+                error_kw={"elinewidth": 1.0, "ecolor": "#3F444A", "capsize": 3},
+                zorder=3,
+            )
+            for x, median in zip(xs, medians):
+                right.text(
+                    x,
+                    median * 1.5,
+                    _kb_label(median),
+                    ha="center",
+                    va="bottom",
+                    fontsize=7.8,
+                    rotation=90,
+                )
+        right.set_yscale("log")
+        top = max(
+            float(traced[n]["engines"][k]["max_peak_bytes"])
+            for n in names
+            for k, _, _ in _ENGINES
+        )
+        bottom = min(
+            float(traced[n]["engines"][k]["median_peak_bytes"])
+            for n in names
+            for k, _, _ in _ENGINES
+        )
+        right.set_ylim(max(1.0, bottom / 4.0), top * 12.0)
+        right.set_xticks(
+            group,
+            [f"{n}\n{traced[n]['row_count']:,} row(s)" for n in names],
+        )
+        right.set_ylabel("Peak traced allocation per query (bytes, log scale)")
+        right.set_title(
+            "Per-query peak allocation (tracemalloc, median; whiskers min-max)"
+        )
+        right.legend(loc="upper left", ncols=3, frameon=False, fontsize=9.5)
+
+        for axis in (left, right):
+            axis.grid(axis="y", color="#D7DCE2", linewidth=0.7, alpha=0.8, zorder=0)
+            axis.set_axisbelow(True)
+            axis.spines["top"].set_visible(False)
+            axis.spines["right"].set_visible(False)
+
+        figure.suptitle(
+            "Memory: Retained Sizes and Per-Query Peak Allocation",
+            fontsize=14.5,
+            fontweight="semibold",
+        )
+        figure.text(
+            0.01,
+            -0.03,
+            "Storage is uncompressed float64: no compression or storage reduction "
+            "is measured or claimed.\nProcess RSS is omitted: its observed increases "
+            f"are at the {payload_note(payload)} measurement noise floor. "
+            "tracemalloc covers Python/NumPy-registered allocations only;\n"
+            "same process, 0.2 MB dataset.",
+            ha="left",
+            va="top",
+            fontsize=8.5,
+            color="#555555",
+        )
 
         figure.savefig(
             destination,
             dpi=300,
             bbox_inches="tight",
             metadata={
-                "Title": (
-                    "Memory Footprint: Raw Data, Column Payload, Chunk Store, "
-                    "and Query Peak"
-                ),
+                "Title": "Memory: Retained Sizes and Per-Query Peak Allocation",
                 "Description": (
-                    "Equal-column float64 numeric payloads are compared directly. "
-                    "Full DataFrame pandas deep accounting, approximate store object "
-                    "graph and shared-process observed RSS peak are independent "
-                    "measurements; they do not establish equivalent-content total "
-                    "memory reduction. Timestamp, symbol, index and metadata are "
-                    "excluded from both numeric payload measurements."
+                    "Left: numeric payload (equal in source and store; "
+                    "uncompressed), full DataFrame and store object-graph "
+                    "estimates. Right: tracemalloc peak allocation per query "
+                    "for row-wise, vectorized and pushdown paths (median of "
+                    "interleaved repeats, min-max whiskers). No RSS and no "
+                    "storage-reduction claim."
                 ),
             },
         )
         plt.close(figure)
 
     return destination
+
+
+def payload_note(payload: Mapping[str, Any]) -> str:
+    metrics = _memory_metrics(payload)
+    rss = metrics.get("rss_diagnostic")
+    if isinstance(rss, Mapping) and "resolution_bytes" in rss:
+        return f"{int(rss['resolution_bytes'])}-byte-resolution"
+    return "page-resolution"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
