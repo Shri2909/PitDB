@@ -11,9 +11,15 @@ data/cache/*.csv
 !data/cache/all_symbols_1m.csv
 data/cache/*.parquet
 benchmarks/results/*.json
+benchmarks/results/suite_run.log
 charts/output/*.png
 .venv/
 *.o
 *.obj
 *.dylib
 .vscode/
+
+PROJECT_PROFILE.md
+
+# Local forensic-audit workspace (hundreds of MB of venvs/evidence).
+audit/
